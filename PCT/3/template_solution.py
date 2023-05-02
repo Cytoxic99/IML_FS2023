@@ -14,8 +14,8 @@ import torch.nn.functional as F
 from torchvision.models import resnet50, ResNet50_Weights
 
 
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-num_workers = 8
+device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
+num_workers = 12
 batch_size = 64
 def generate_embeddings():
     """
@@ -87,10 +87,12 @@ def get_data(file, train=True):
     # TODO: Normalize the embeddings across the dataset
 
     file_to_embedding = {}
+    
     for i in range(len(filenames)):
-        file_to_embedding[filenames[i]] = embeddings[i]
+        file_to_embedding[filenames[i].replace(u"food\\", "")] = embeddings[i]
     X = []
     y = []
+
     # use the individual embeddings to generate the features and labels for triplets
     for t in triplets:
         emb = [file_to_embedding[a] for a in t.split()]
@@ -136,7 +138,7 @@ class Net(nn.Module):
         """
         super(Net, self).__init__()
         self.lin1 = nn.Linear(3000, 3000)
-        self.lin2 = nn.Linear(3000, 1)
+        self.lin2 = nn.Linear(3000, 3000)
 
 
     def forward(self, x):
@@ -147,7 +149,7 @@ class Net(nn.Module):
 
         output: x: torch.Tensor, the output of the model
         """
-        x = F.relu(self.lin1)
+        x = F.relu(self.lin1(x))
         x = self.lin2(x)
         return x
     
@@ -191,17 +193,21 @@ def train_model(train_loader):
         model = torch.load('current_model.pt')
     
     for epoch in range(n_epochs):
+        print(f"----Epoch {epoch}----")
         epoch_loss = 0.0
         for i, [X, y] in enumerate(train_loader):
             X, y = X.to(device), y.to(device)
             
             optimizer.zero_grad()
+            print("flag1")
             outputs = model(X)
+            print("flag")
             loss = criterion(outputs, y)
             loss.backward()
             optimizer.step()
             
             epoch_loss += loss.item()
+            print(f"Current loss: {loss.item()}")
         
         # calculate validation loss
         val_loss = 0.0
@@ -235,9 +241,6 @@ def train_model(train_loader):
     
     return best_model
 
-
-
-    return model
 
 def test_model(model, loader):
     """
