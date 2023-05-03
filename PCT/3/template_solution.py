@@ -14,9 +14,9 @@ import torch.nn.functional as F
 from torchvision.models import resnet50, ResNet50_Weights
 
 
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-num_workers = 12
-batch_size = 256
+device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
+num_workers = 8
+batch_size = 64
 def generate_embeddings():
     """
     Transform, resize and normalize the images and then use a pretrained model to extract 
@@ -107,7 +107,7 @@ def get_data(file, train=True):
     return X, y
 
 # Hint: adjust batch_size and num_workers to your PC configuration, so that you don't run out of memory
-def create_loader_from_np(X, y = None, train = True, batch_size=64, shuffle=True, num_workers = 4):
+def create_loader_from_np(X, y = None, train = True, batch_size=batch_size, shuffle=True, num_workers = num_workers):
     """
     Create a torch.utils.data.DataLoader object from numpy arrays containing the data.
 
@@ -137,8 +137,8 @@ class Net(nn.Module):
         The constructor of the model.
         """
         super(Net, self).__init__()
-        self.lin1 = nn.Linear(3000, 30)
-        self.lin2 = nn.Linear(30, 1)
+        self.lin1 = nn.Linear(3000, 20)
+        self.lin2 = nn.Linear(20, 1)
 
 
     def forward(self, x):
@@ -193,7 +193,7 @@ def train_model(train_loader):
         model = torch.load('current_model.pt')
     
     for epoch in range(n_epochs):
-        print(f"----Epoch {epoch}----")
+        print(f"----Epoch {epoch+1}----")
         epoch_loss = 0.0
         for i, [X, y] in enumerate(train_loader):
             X, y = X.to(device), y.to(device)
@@ -205,7 +205,7 @@ def train_model(train_loader):
             optimizer.step()
             
             epoch_loss += loss.item()
-            print(f"Current loss: {loss.item()}")
+            print(f"Epoch {epoch+1}, current loss: {loss.item()} progress {i/len(train_loader)}")
         
         # calculate validation loss
         val_loss = 0.0
@@ -218,7 +218,7 @@ def train_model(train_loader):
                 
                 val_loss += loss.item()
         
-        torch.save(model, 'current_model.pt')
+        
         val_loss /= len(val_loader.dataset)
         print(f"Epoch {epoch+1} - Train loss: {epoch_loss/len(train_loader.dataset):.4f} - Val loss: {val_loss:.4f}")
         
@@ -226,6 +226,7 @@ def train_model(train_loader):
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             best_model = copy.deepcopy(model)
+            torch.save(best_model, 'current_model.pt')
     
     # train on full dataset with best model
     best_model.train()
