@@ -14,9 +14,9 @@ import torch.nn.functional as F
 from torchvision.models import resnet50, ResNet50_Weights
 
 
-device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 num_workers = 12
-batch_size = 64
+batch_size = 256
 def generate_embeddings():
     """
     Transform, resize and normalize the images and then use a pretrained model to extract 
@@ -137,8 +137,8 @@ class Net(nn.Module):
         The constructor of the model.
         """
         super(Net, self).__init__()
-        self.lin1 = nn.Linear(3000, 3000)
-        self.lin2 = nn.Linear(3000, 3000)
+        self.lin1 = nn.Linear(3000, 30)
+        self.lin2 = nn.Linear(30, 1)
 
 
     def forward(self, x):
@@ -199,9 +199,7 @@ def train_model(train_loader):
             X, y = X.to(device), y.to(device)
             
             optimizer.zero_grad()
-            print("flag1")
             outputs = model(X)
-            print("flag")
             loss = criterion(outputs, y)
             loss.backward()
             optimizer.step()
