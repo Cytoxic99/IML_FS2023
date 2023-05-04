@@ -1,74 +1,47 @@
 # This serves as a template which will guide you through the implementation of this task.  It is advised
 # to first read the whole template and get a sense of the overall structure of the code before trying to fill in any of the TODO gaps
 # First, we import necessary libraries:
-import copy
 import numpy as np
 from torchvision import transforms
-from torch.utils.data import DataLoader, TensorDataset, random_split
+from torch.utils.data import DataLoader, TensorDataset
 import os
 import torch
 from torchvision import transforms
 import torchvision.datasets as datasets
 import torch.nn as nn
 import torch.nn.functional as F
-from torchvision.models import resnet50, ResNet50_Weights
 
 
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-if torch.cuda.is_available():
-    device = torch.device('cpu')
-    print("I have the GPU")
-else:
-    device = torch.device('cpu')
-    print("Have to use CPU")
-
-num_workers = 12
-batch_size = 1
 def generate_embeddings():
     """
     Transform, resize and normalize the images and then use a pretrained model to extract 
     the embeddings.
     """
-    train_transforms = transforms.Compose([
-    transforms.RandomResizedCrop(256),
-    transforms.RandomHorizontalFlip(),
-    transforms.ToTensor(),
-    transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                         std=[0.229, 0.224, 0.225])
-])
+    # TODO: define a transform to pre-process the images
+    train_transforms = transforms.Compose([transforms.ToTensor()])
 
     train_dataset = datasets.ImageFolder(root="dataset/", transform=train_transforms)
     # Hint: adjust batch_size and num_workers to your PC configuration, so that you don't 
     # run out of memory
     train_loader = DataLoader(dataset=train_dataset,
-                              batch_size=batch_size,
+                              batch_size=64,
                               shuffle=False,
-                              pin_memory=True, num_workers=num_workers)
+                              pin_memory=True, num_workers=16)
 
     # TODO: define a model for extraction of the embeddings (Hint: load a pretrained model,
     #  more info here: https://pytorch.org/vision/stable/models.html)
-    weights = ResNet50_Weights.DEFAULT
-    model = resnet50(weights=weights)
-    model.eval()
-
-     # Generate embeddings for all images in the dataset
+    model = nn.Module()
     embeddings = []
-    i = 0
-    for images, labels in train_loader:
-        i += 1.0
-        print(f"working: {i/len(train_loader)}%")
-        with torch.no_grad():
-            # Forward pass through the model to extract the embeddings
-            outputs = model(images.to(device))
-            embeddings.append(outputs)
+    embedding_size = 1000 # Dummy variable, replace with the actual embedding size once you 
+    # pick your model
+    num_images = len(train_dataset)
+    embeddings = np.zeros((num_images, embedding_size))
+    # TODO: Use the model to extract the embeddings. Hint: remove the last layers of the 
+    # model to access the embeddings the model generates. 
 
-    # Concatenate the embeddings into a single numpy array
-    embeddings = torch.cat(embeddings).numpy()
-
-    # Save the embeddings to a file
     np.save('dataset/embeddings.npy', embeddings)
-    
-    return embeddings
 
 
 def get_data(file, train=True):
@@ -94,12 +67,10 @@ def get_data(file, train=True):
     # TODO: Normalize the embeddings across the dataset
 
     file_to_embedding = {}
-    
     for i in range(len(filenames)):
-        file_to_embedding[filenames[i].replace("food\\", "")] = embeddings[i]
+        file_to_embedding[filenames[i]] = embeddings[i]
     X = []
     y = []
-
     # use the individual embeddings to generate the features and labels for triplets
     for t in triplets:
         emb = [file_to_embedding[a] for a in t.split()]
@@ -114,7 +85,7 @@ def get_data(file, train=True):
     return X, y
 
 # Hint: adjust batch_size and num_workers to your PC configuration, so that you don't run out of memory
-def create_loader_from_np(X, y = None, train = True, batch_size=batch_size, shuffle=True, num_workers = num_workers):
+def create_loader_from_np(X, y = None, train = True, batch_size=64, shuffle=True, num_workers = 4):
     """
     Create a torch.utils.data.DataLoader object from numpy arrays containing the data.
 
@@ -143,10 +114,8 @@ class Net(nn.Module):
         """
         The constructor of the model.
         """
-        super(Net, self).__init__()
-        self.lin1 = nn.Linear(3000, 20)
-        self.lin2 = nn.Linear(20, 1)
-
+        super().__init__()
+        self.fc = nn.Linear(3000, 1)
 
     def forward(self, x):
         """
@@ -156,17 +125,9 @@ class Net(nn.Module):
 
         output: x: torch.Tensor, the output of the model
         """
-        x = F.relu(self.lin1(x))
-        x = self.lin2(x)
+        x = self.fc(x)
+        x = F.relu(x)
         return x
-    
-    def num_flat_features(self, x):
-        size = x.size()[1:]
-        num = 1
-        for i in size:
-            num *= i
-        return num
-
 
 def train_model(train_loader):
     """
@@ -180,74 +141,16 @@ def train_model(train_loader):
     model = Net()
     model.train()
     model.to(device)
-    n_epochs = 1
-    
-    # define loss function and optimizer
-    criterion = nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-    
-    # define validation split
-    val_split = 0.2
-    n_train = len(train_loader.dataset)
-    split_idx = int(np.floor(n_train * (1 - val_split)))
-    train_data, val_data = random_split(train_loader.dataset, [split_idx, n_train-split_idx])
-    train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True, num_workers=num_workers)
-    val_loader = DataLoader(val_data, batch_size=batch_size, shuffle=True, num_workers=num_workers)
-    
-    best_val_loss = np.inf
-
-    if os.path.isfile('current_model.pt'):
-        model = torch.load('current_model.pt')
-    
-    for epoch in range(n_epochs):
-        print(f"----Epoch {epoch+1}----")
-        epoch_loss = 0.0
-        for i, [X, y] in enumerate(train_loader):
-            X, y = X.to(device), y.to(device)
-            
-            optimizer.zero_grad()
-            outputs = model(X)
-            print(f"Len y: {len(y)}, Len output: {len(outputs)}")
-            loss = criterion(outputs, y)
-            loss.backward()
-            optimizer.step()
-            
-            epoch_loss += loss.item()
-            print(f"Epoch {epoch+1}, current loss: {loss.item()} progress {i/len(train_loader)}")
-        
-        # calculate validation loss
-        val_loss = 0.0
-        with torch.no_grad():
-            for X, y in val_loader:
-                X, y = X.to(device), y.to(device)
-                
-                outputs = model(X)
-                loss = criterion(outputs, y)
-                
-                val_loss += loss.item()
-        
-        
-        val_loss /= len(val_loader.dataset)
-        print(f"Epoch {epoch+1} - Train loss: {epoch_loss/len(train_loader.dataset):.4f} - Val loss: {val_loss:.4f}")
-        
-        # update best model
-        if val_loss < best_val_loss:
-            best_val_loss = val_loss
-            best_model = copy.deepcopy(model)
-            torch.save(best_model, 'current_model.pt')
-    
-    # train on full dataset with best model
-    best_model.train()
-    for [X, y] in train_loader:
-        X, y = X.to(device), y.to(device)
-        optimizer.zero_grad()
-        outputs = best_model(X) 
-        loss = criterion(outputs, y)
-        loss.backward()
-        optimizer.step()
-    
-    return best_model
-
+    n_epochs = 10
+    # TODO: define a loss function, optimizer and proceed with training. Hint: use the part 
+    # of the training data as a validation split. After each epoch, compute the loss on the 
+    # validation split and print it out. This enables you to see how your model is performing 
+    # on the validation data before submitting the results on the server. After choosing the 
+    # best model, train it on the whole training data.
+    for epoch in range(n_epochs):        
+        for [X, y] in train_loader:
+            pass
+    return model
 
 def test_model(model, loader):
     """
@@ -267,7 +170,6 @@ def test_model(model, loader):
             x_batch= x_batch.to(device)
             predicted = model(x_batch)
             predicted = predicted.cpu().numpy()
-            print(f"The length of predicted is: {len(predicted)}")
             # Rounding the predictions to 0 or 1
             predicted[predicted >= 0.5] = 1
             predicted[predicted < 0.5] = 0
@@ -291,7 +193,7 @@ if __name__ == '__main__':
 
     # Create data loaders for the training and testing data
     train_loader = create_loader_from_np(X, y, train = True, batch_size=64)
-    test_loader = create_loader_from_np(X_test, train = False, batch_size=1, shuffle=False)
+    test_loader = create_loader_from_np(X_test, train = False, batch_size=2048, shuffle=False)
 
     # define a model and train it
     model = train_model(train_loader)
