@@ -34,12 +34,12 @@ def get_data(file, train=True):
 
  for i in range(len(filenames)):
   file_to_embedding[filenames[i].replace("food\\", "")] = embeddings[i]
- print(file_to_embedding)
+
  X = []
  y = []
-
  # use the individual embeddings to generate the features and labels for triplets
  for t in triplets:
+  fuck = t.split
   emb = [file_to_embedding[a] for a in t.split()]
   X.append(np.hstack([emb[0], emb[1], emb[2]]))
   y.append(1)
