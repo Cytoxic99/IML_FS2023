@@ -143,10 +143,8 @@ class Net(nn.Module):
         """
         The constructor of the model.
         """
-        super(Net, self).__init__()
-        self.lin1 = nn.Linear(3000, 20)
-        self.lin2 = nn.Linear(20, 1)
-
+        super().__init__()
+        self.fc = nn.Linear(3000, 1)
 
     def forward(self, x):
         """
@@ -156,8 +154,9 @@ class Net(nn.Module):
 
         output: x: torch.Tensor, the output of the model
         """
-        x = F.relu(self.lin1(x))
-        x = self.lin2(x)
+
+        x = self.fc(x)
+        x = F.relu(x)
         return x
     
     def num_flat_features(self, x):
