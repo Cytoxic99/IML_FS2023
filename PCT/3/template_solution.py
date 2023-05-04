@@ -12,6 +12,7 @@ import torchvision.datasets as datasets
 import torch.nn as nn
 import torch.nn.functional as F
 from torchvision.models import resnet50, ResNet50_Weights
+import torch.optim as optim
 
 
 
@@ -159,13 +160,7 @@ class Net(nn.Module):
         x = F.relu(x)
         return x
     
-    def num_flat_features(self, x):
-        size = x.size()[1:]
-        num = 1
-        for i in size:
-            num *= i
-        return num
-
+    
 
 def train_model(train_loader):
     """
@@ -176,76 +171,84 @@ def train_model(train_loader):
     
     output: model: torch.nn.Module, the trained model
     """
+    # Define the model architecture
     model = Net()
+    
+    # Set the model to train mode and move it to the device
     model.train()
     model.to(device)
-    n_epochs = 1
     
-    # define loss function and optimizer
+    # Define the loss function and the optimizer
     criterion = nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-    
-    # define validation split
-    val_split = 0.2
-    n_train = len(train_loader.dataset)
-    split_idx = int(np.floor(n_train * (1 - val_split)))
-    train_data, val_data = random_split(train_loader.dataset, [split_idx, n_train-split_idx])
-    train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True, num_workers=num_workers)
-    val_loader = DataLoader(val_data, batch_size=batch_size, shuffle=True, num_workers=num_workers)
-    
-    best_val_loss = np.inf
 
-    if os.path.isfile('current_model.pt'):
-        model = torch.load('current_model.pt')
+    optimizer = optim.Adam(model.parameters(), lr=0.001)
     
+    # Define the number of epochs and the validation split
+    n_epochs = 10
+    validation_split = 0.2
+    
+    # Calculate the size of the validation set
+    n_train_examples = len(train_loader.dataset)
+    n_valid_examples = int(n_train_examples * validation_split)
+    
+    # Split the training data into training and validation sets
+    train_data, valid_data = torch.utils.data.random_split(train_loader.dataset, 
+                                                           [n_train_examples - n_valid_examples, 
+                                                            n_valid_examples])
+    
+    # Create data loaders for the training and validation sets
+    train_loader = torch.utils.data.DataLoader(train_data, batch_size=batch_size, shuffle=True)
+    valid_loader = torch.utils.data.DataLoader(valid_data, batch_size=batch_size, shuffle=False)
+    
+    # Train the model
+    best_valid_loss = float('inf')
     for epoch in range(n_epochs):
-        print(f"----Epoch {epoch+1}----")
-        epoch_loss = 0.0
-        for i, [X, y] in enumerate(train_loader):
-            X, y = X.to(device), y.to(device)
-            
+        train_loss = 0.0
+        valid_loss = 0.0
+        
+        # Train the model on the training data
+        for [X, y] in train_loader:
             optimizer.zero_grad()
-            outputs = model(X)
-            print(f"Len y: {len(y)}, Len output: {len(outputs)}")
-            loss = criterion(outputs, y)
+            output = model(X)
+            y = y.unsqueeze(0)
+            print(output.size())
+            print(y.size())
+            loss = criterion(output, y)
+            
             loss.backward()
             optimizer.step()
+            train_loss += loss.item() * X.size(0)
             
-            epoch_loss += loss.item()
-            print(f"Epoch {epoch+1}, current loss: {loss.item()} progress {i/len(train_loader)}")
-        
-        # calculate validation loss
-        val_loss = 0.0
+        # Evaluate the model on the validation data
+        model.eval()
         with torch.no_grad():
-            for X, y in val_loader:
-                X, y = X.to(device), y.to(device)
-                
-                outputs = model(X)
-                loss = criterion(outputs, y)
-                
-                val_loss += loss.item()
+            for [X, y] in valid_loader:
+                output = model(X)
+                loss = criterion(output, y)
+                valid_loss += loss.item() * X.size(0)
         
+        # Print the validation loss for this epoch
+        train_loss /= len(train_data)
+        valid_loss /= len(valid_data)
+        print('Epoch: {} \tTraining Loss: {:.6f} \tValidation Loss: {:.6f}'.format(
+            epoch+1, train_loss, valid_loss))
         
-        val_loss /= len(val_loader.dataset)
-        print(f"Epoch {epoch+1} - Train loss: {epoch_loss/len(train_loader.dataset):.4f} - Val loss: {val_loss:.4f}")
-        
-        # update best model
-        if val_loss < best_val_loss:
-            best_val_loss = val_loss
-            best_model = copy.deepcopy(model)
-            torch.save(best_model, 'current_model.pt')
+        # Save the best model based on the validation loss
+        if valid_loss < best_valid_loss:
+            best_valid_loss = valid_loss
+            best_model = model.state_dict()
     
-    # train on full dataset with best model
-    best_model.train()
+    # Train the best model on the whole training data
+    model.load_state_dict(best_model)
+    model.train()
     for [X, y] in train_loader:
-        X, y = X.to(device), y.to(device)
         optimizer.zero_grad()
-        outputs = best_model(X) 
-        loss = criterion(outputs, y)
+        output = model(X)
+        loss = criterion(output, y)
         loss.backward()
         optimizer.step()
-    
-    return best_model
+        
+    return model
 
 
 def test_model(model, loader):
