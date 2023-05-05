@@ -92,13 +92,15 @@ def get_data(file, train=True):
                                          transform=None)
     filenames = [s[0].split('/')[-1].replace('.jpg', '') for s in train_dataset.samples]
     embeddings = np.load('dataset/embeddings.npy')
-    embeddings_norm = []
+    print(f"The shape of embeddings is: {embeddings.shape}")
     for i in range(len(embeddings)):
-        embeddings_norm.append(np.linalg.norm(embeddings[i]))
+        embeddings_norm = np.linalg.norm(embeddings[i])
+        embeddings[i] /= embeddings_norm
+    print(f"The shape of embeddings after is: {embeddings.shape}")
     # use the individual embeddings to generate the features and labels for triplets
     file_to_embedding = {}
     for i in range(len(filenames)):
-        file_to_embedding[filenames[i]] = embeddings_norm[i]
+        file_to_embedding[filenames[i]] = embeddings[i]
     X = []
     y = []
     # use the individual embeddings to generate the features and labels for triplets
@@ -147,7 +149,7 @@ class Net(nn.Module):
         The constructor of the model.
         """
         super().__init__()
-        self.lin1 = nn.Linear(3, 50)
+        self.lin1 = nn.Linear(3000, 50)
         self.lin2 = nn.Linear(50, 20)
         self.lin3 = nn.Linear(20, 1)
 
@@ -183,9 +185,7 @@ def train_model(train_loader):
     # Set the model to train mode and move it to the device
     model.train()
     
-    # Define the loss function and the optimizer
-    criterion = nn.CrossEntropyLoss()
-
+   
     optimizer = optim.Adam(model.parameters(), lr=0.001)
     
     # Define the number of epochs and the validation split
@@ -215,23 +215,24 @@ def train_model(train_loader):
         for [X, y] in train_loader:
             optimizer.zero_grad()
             output = model.forward(X)
-
+            output = output.flatten()
             print(output.shape)
-            y = y.unsqueeze(0)
+            
             print(y.shape)
-            loss = criterion(output, y)
+            loss = F.huber_loss(y, output)
             
             loss.backward()
             optimizer.step()
             train_loss += loss.item() * X.size(0)
-            print(f"Epoch: {epoch + 1} Train loss: {loss.item()}")
+            print(f"Epoch: {epoch + 1}, output: {output}, y: {y}, Train loss: {loss.item()}")
             
         # Evaluate the model on the validation data
         model.eval()
         with torch.no_grad():
             for [X, y] in valid_loader:
                 output = model(X)
-                loss = criterion(output, y)
+                output = output.flatten()
+                loss = F.huber_loss(output, y)
                 valid_loss += loss.item() * X.size(0)
         
         # Print the validation loss for this epoch
@@ -251,7 +252,8 @@ def train_model(train_loader):
     for [X, y] in train_loader:
         optimizer.zero_grad()
         output = model(X)
-        loss = criterion(output, y)
+        output = output.flatten()
+        loss = F.huber_loss(output, y)
         loss.backward()
         optimizer.step()
         
@@ -273,8 +275,9 @@ def test_model(model, loader):
     # Iterate over the test data
     with torch.no_grad(): # We don't need to compute gradients for testing
         for [x_batch] in loader:
-            x_batch= x_batch.to(device)
+            x_batch= x_batch
             predicted = model(x_batch)
+            predicted = predicted.flatten()
             predicted = predicted.cpu().numpy()
             print(f"The length of predicted is: {len(predicted)}")
             # Rounding the predictions to 0 or 1
