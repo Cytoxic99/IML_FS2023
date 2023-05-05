@@ -11,7 +11,7 @@ from torchvision import transforms
 import torchvision.datasets as datasets
 import torch.nn as nn
 import torch.nn.functional as F
-from torchvision.models import resnet50, ResNet50_Weights
+from torchvision.models import resnet50, ResNet50_Weights, vgg16
 import torch.optim as optim
 
 
@@ -31,12 +31,12 @@ def generate_embeddings():
     the embeddings.
     """
     train_transforms = transforms.Compose([
-    transforms.RandomResizedCrop(256),
-    transforms.RandomHorizontalFlip(),
-    transforms.ToTensor(),
-    transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                         std=[0.229, 0.224, 0.225])
-])
+        transforms.RandomResizedCrop(256),
+        transforms.RandomHorizontalFlip(),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                             std=[0.229, 0.224, 0.225])
+    ])
 
     train_dataset = datasets.ImageFolder(root="dataset/", transform=train_transforms)
     # Hint: adjust batch_size and num_workers to your PC configuration, so that you don't 
@@ -48,11 +48,12 @@ def generate_embeddings():
 
     # TODO: define a model for extraction of the embeddings (Hint: load a pretrained model,
     #  more info here: https://pytorch.org/vision/stable/models.html)
-    weights = ResNet50_Weights.DEFAULT
-    model = resnet50(weights=weights)
+    vgg = vgg16(pretrained=True)
+    vgg.classifier[6] = nn.Linear(4096, 3000)
+    model = nn.Sequential(*list(vgg.children())[:-1])
     model.eval()
 
-     # Generate embeddings for all images in the dataset
+    # Generate embeddings for all images in the dataset
     embeddings = []
     i = 0
     for images, labels in train_loader:
@@ -60,7 +61,7 @@ def generate_embeddings():
         print(f"working: {i/len(train_loader)}%")
         with torch.no_grad():
             # Forward pass through the model to extract the embeddings
-            outputs = model(images.to(device))
+            outputs = model(images)
             embeddings.append(outputs)
 
     # Concatenate the embeddings into a single numpy array
@@ -68,7 +69,6 @@ def generate_embeddings():
 
     # Save the embeddings to a file
     np.save('dataset/embeddings.npy', embeddings)
-    
     return embeddings
 
 
@@ -92,15 +92,15 @@ def get_data(file, train=True):
                                          transform=None)
     filenames = [s[0].split('/')[-1].replace('.jpg', '') for s in train_dataset.samples]
     embeddings = np.load('dataset/embeddings.npy')
-    # TODO: Normalize the embeddings across the dataset
-
+    embeddings_norm = []
+    for i in range(len(embeddings)):
+        embeddings_norm.append(np.linalg.norm(embeddings[i]))
+    # use the individual embeddings to generate the features and labels for triplets
     file_to_embedding = {}
-    
     for i in range(len(filenames)):
-        file_to_embedding[filenames[i].replace("food\\", "")] = embeddings[i]
+        file_to_embedding[filenames[i]] = embeddings_norm[i]
     X = []
     y = []
-
     # use the individual embeddings to generate the features and labels for triplets
     for t in triplets:
         emb = [file_to_embedding[a] for a in t.split()]
@@ -112,6 +112,7 @@ def get_data(file, train=True):
             y.append(0)
     X = np.vstack(X)
     y = np.hstack(y)
+
     return X, y
 
 # Hint: adjust batch_size and num_workers to your PC configuration, so that you don't run out of memory
@@ -136,6 +137,7 @@ def create_loader_from_np(X, y = None, train = True, batch_size=batch_size, shuf
     return loader
 
 # TODO: define a model. Here, the basic structure is defined, but you need to fill in the details
+# TODO: define a model. Here, the basic structure is defined, but you need to fill in the details
 class Net(nn.Module):
     """
     The model class, which defines our classifier.
@@ -145,7 +147,10 @@ class Net(nn.Module):
         The constructor of the model.
         """
         super().__init__()
-        self.fc = nn.Linear(3000, 1)
+        self.lin1 = nn.Linear(3, 50)
+        self.lin2 = nn.Linear(50, 20)
+        self.lin3 = nn.Linear(20, 1)
+
 
     def forward(self, x):
         """
@@ -155,11 +160,12 @@ class Net(nn.Module):
 
         output: x: torch.Tensor, the output of the model
         """
-
-        x = self.fc(x)
-        x = F.relu(x)
+        
+        x = F.relu(self.lin1(x))
+        x = F.relu(self.lin2(x))
+        x = self.lin3(x)
         return x
-    
+        
     
 
 def train_model(train_loader):
@@ -176,7 +182,6 @@ def train_model(train_loader):
     
     # Set the model to train mode and move it to the device
     model.train()
-    model.to(device)
     
     # Define the loss function and the optimizer
     criterion = nn.CrossEntropyLoss()
@@ -210,7 +215,10 @@ def train_model(train_loader):
         for [X, y] in train_loader:
             optimizer.zero_grad()
             output = model.forward(X)
+
+            print(output.shape)
             y = y.unsqueeze(0)
+            print(y.shape)
             loss = criterion(output, y)
             
             loss.backward()
