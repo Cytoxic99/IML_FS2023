@@ -17,7 +17,7 @@ import torch.optim as optim
 
 
 if torch.cuda.is_available():
-    device = torch.device('cpu')
+    device = torch.device('cuda')
     print("I have the GPU")
 else:
     device = torch.device('cpu')
@@ -126,7 +126,7 @@ def create_loader_from_np(X, y = None, train = True, batch_size=batch_size, shuf
     """
     if train:
         dataset = TensorDataset(torch.from_numpy(X).type(torch.float), 
-                                torch.from_numpy(y).type(torch.long))
+                                torch.from_numpy(y).type(torch.float))
     else:
         dataset = TensorDataset(torch.from_numpy(X).type(torch.float))
     loader = DataLoader(dataset=dataset,
@@ -184,7 +184,7 @@ def train_model(train_loader):
     optimizer = optim.Adam(model.parameters(), lr=0.001)
     
     # Define the number of epochs and the validation split
-    n_epochs = 10
+    n_epochs = 1
     validation_split = 0.2
     
     # Calculate the size of the validation set
@@ -209,15 +209,14 @@ def train_model(train_loader):
         # Train the model on the training data
         for [X, y] in train_loader:
             optimizer.zero_grad()
-            output = model(X)
+            output = model.forward(X)
             y = y.unsqueeze(0)
-            print(output.size())
-            print(y.size())
             loss = criterion(output, y)
             
             loss.backward()
             optimizer.step()
             train_loss += loss.item() * X.size(0)
+            print(f"Epoch: {epoch + 1} Train loss: {loss.item()}")
             
         # Evaluate the model on the validation data
         model.eval()
