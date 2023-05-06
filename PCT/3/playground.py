@@ -100,7 +100,7 @@ def get_data(file, train=True):
  a = len(filenames)
  for i in range(len(filenames)):
   file_to_embedding[filenames[i].replace("food\\", "")] = embeddings[
-   i]  # every of the 10k keys(image numbersa) gets an value(emdding row) of 1k numbers which is the i'th embeddings row.
+   i]  # every of the 10k keys(image numbers) gets an value(emdding row) of 1k numbers which is the i'th embeddings row.
 
  X = []
  y = []
@@ -112,7 +112,7 @@ def get_data(file, train=True):
   # emb = list of embeddings belonging to image numbers chosen by the values of a triplet row
   # shape of emb: 3x1000
 
-  X.append(np.hstack([emb[0], emb[1], emb[2]]))  # hängt einfach alle 3 embeddings hintereinander
+  X.append(np.hstack([emb[0], emb[1], emb[2]]))  # hängt einfach alle 3 embs hintereinander
   y.append(1)
   # Generating negative samples (data augmentation)
   if train:
