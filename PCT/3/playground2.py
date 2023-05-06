@@ -6,6 +6,11 @@ emb0 = [1, 2, 3]
 emd1 = [4,5,6]
 emb3 = [7,8,9]
 
-c = np.hstack([emb3, emb0, emd1])
+c = np.vstack([emb3, emb0, emd1])
 
 print(c)
+
+l = np.array([emb3,emb0])
+
+
+print(l.size(0))

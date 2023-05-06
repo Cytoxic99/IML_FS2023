@@ -99,8 +99,7 @@ def get_data(file, train=True):
 
  a = len(filenames)
  for i in range(len(filenames)):
-  file_to_embedding[filenames[i].replace("food\\", "")] = embeddings[
-   i]  # every of the 10k keys(image numbersa) gets an value(emdding row) of 1k numbers which is the i'th embeddings row.
+  file_to_embedding[filenames[i].replace("food\\", "")] = embeddings[i]  # every of the 10k keys(image numbersa) gets an value(emdding row) of 1k numbers which is the i'th embeddings row.
 
  X = []
  y = []
@@ -146,8 +145,92 @@ def create_loader_from_np(X, y=None, train=True, batch_size=batch_size, shuffle=
  return loader
 
 
+def train_model(train_loader):
+ """
+ The training procedure of the model; it accepts the training data, defines the model
+ and then trains it.
 
+ input: train_loader: torch.data.util.DataLoader, the object containing the training data
 
+ output: model: torch.nn.Module, the trained model
+ """
+ # Define the model architecture
+ model = Net()
+
+ # Set the model to train mode and move it to the device
+ model.train()
+ model.to(device)
+
+ # Define the loss function and the optimizer
+ criterion = nn.CrossEntropyLoss()
+
+ optimizer = optim.Adam(model.parameters(), lr=0.001)
+
+ # Define the number of epochs and the validation split
+ n_epochs = 1
+ validation_split = 0.2
+
+ # Calculate the size of the validation set
+ n_train_examples = len(train_loader.dataset)
+ n_valid_examples = int(n_train_examples * validation_split)
+
+ # Split the training data into training and validation sets
+ train_data, valid_data = torch.utils.data.random_split(train_loader.dataset,
+                                                        [n_train_examples - n_valid_examples,
+                                                         n_valid_examples])
+
+ # Create data loaders for the training and validation sets
+ train_loader = torch.utils.data.DataLoader(train_data, batch_size=batch_size, shuffle=True)
+ valid_loader = torch.utils.data.DataLoader(valid_data, batch_size=batch_size, shuffle=False)
+
+ # Train the model
+ best_valid_loss = float('inf')
+ for epoch in range(n_epochs):
+  train_loss = 0.0
+  valid_loss = 0.0
+
+  # Train the model on the training data
+  for [X, y] in train_loader:
+   optimizer.zero_grad()
+   output = model.forward(X)
+   y = y.unsqueeze(0)
+   loss = criterion(output, y)
+
+   loss.backward()
+   optimizer.step()
+   train_loss += loss.item() * X.size(0)
+   print(f"Epoch: {epoch + 1} Train loss: {loss.item()}")
+
+  # Evaluate the model on the validation data
+  model.eval()
+  with torch.no_grad():
+   for [X, y] in valid_loader:
+    output = model(X)
+    loss = criterion(output, y)
+    valid_loss += loss.item() * X.size(0)
+
+  # Print the validation loss for this epoch
+  train_loss /= len(train_data)
+  valid_loss /= len(valid_data)
+  print('Epoch: {} \tTraining Loss: {:.6f} \tValidation Loss: {:.6f}'.format(
+   epoch + 1, train_loss, valid_loss))
+
+  # Save the best model based on the validation loss
+  if valid_loss < best_valid_loss:
+   best_valid_loss = valid_loss
+   best_model = model.state_dict()
+
+ # Train the best model on the whole training data
+ model.load_state_dict(best_model)
+ model.train()
+ for [X, y] in train_loader:
+  optimizer.zero_grad()
+  output = model(X)
+  loss = criterion(output, y)
+  loss.backward()
+  optimizer.step()
+
+ return model
 
 
 # TODO: define a model. Here, the basic structure is defined, but you need to fill in the details
@@ -195,6 +278,9 @@ if __name__ == '__main__':
  # Create data loaders for the training and testing data
  train_loader = create_loader_from_np(X, y, train=True, batch_size=64)
  test_loader = create_loader_from_np(X_test, train=False, batch_size=1, shuffle=False)
+
+ # define a model and train it
+ #model = train_model(train_loader)
 
  # define a model and perform forward pass
  model = Net()

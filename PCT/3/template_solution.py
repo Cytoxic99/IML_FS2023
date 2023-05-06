@@ -100,7 +100,8 @@ def get_data(file, train=True):
     # use the individual embeddings to generate the features and labels for triplets
     file_to_embedding = {}
     for i in range(len(filenames)):
-        file_to_embedding[filenames[i]] = embeddings[i]
+        #file_to_embedding[filenames[i]] = embeddings[i]
+        file_to_embedding[filenames[i].replace("food\\", "")] = embeddings[i]
     X = []
     y = []
     # use the individual embeddings to generate the features and labels for triplets
@@ -197,7 +198,8 @@ def train_model(train_loader):
     n_valid_examples = int(n_train_examples * validation_split)
     
     # Split the training data into training and validation sets
-    train_data, valid_data = torch.utils.data.random_split(train_loader.dataset, 
+    train_data, valid_data = torch.utils.data.random_split(
+
                                                            [n_train_examples - n_valid_examples, 
                                                             n_valid_examples])
     
