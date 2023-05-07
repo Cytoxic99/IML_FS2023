@@ -92,11 +92,11 @@ def get_data(file, train=True):
                                          transform=None)
     filenames = [s[0].split('/')[-1].replace('.jpg', '') for s in train_dataset.samples]
     embeddings = np.load('dataset/embeddings.npy')
-    print(f"The shape of embeddings is: {embeddings.shape}")
+    
     for i in range(len(embeddings)):
         embeddings_norm = np.linalg.norm(embeddings[i])
         embeddings[i] /= embeddings_norm
-    print(f"The shape of embeddings after is: {embeddings.shape}")
+    
     # use the individual embeddings to generate the features and labels for triplets
     file_to_embedding = {}
     for i in range(len(filenames)):
@@ -150,8 +150,9 @@ class Net(nn.Module):
         """
         super().__init__()
         self.lin1 = nn.Linear(3000, 50)
-        self.lin2 = nn.Linear(50, 20)
-        self.lin3 = nn.Linear(20, 1)
+        self.lin2 = nn.Linear(50, 30)
+        self.lin3 = nn.Linear(30, 10)
+        self.lin4 = nn.Linear(10, 1)
 
 
     def forward(self, x):
@@ -165,7 +166,8 @@ class Net(nn.Module):
         
         x = F.relu(self.lin1(x))
         x = F.relu(self.lin2(x))
-        x = self.lin3(x)
+        x = F.relu(self.lin3(x))
+        x = F.sigmoid(self.lin4(x))
         return x
         
     
@@ -181,15 +183,19 @@ def train_model(train_loader):
     """
     # Define the model architecture
     model = Net()
-    
+
     # Set the model to train mode and move it to the device
     model.train()
+    model.to(device) 
+
     
    
     optimizer = optim.Adam(model.parameters(), lr=0.001)
+   
+    critization = nn.BCELoss()
     
     # Define the number of epochs and the validation split
-    n_epochs = 1
+    n_epochs = 10
     validation_split = 0.2
     
     # Calculate the size of the validation set
@@ -210,30 +216,47 @@ def train_model(train_loader):
     for epoch in range(n_epochs):
         train_loss = 0.0
         valid_loss = 0.0
+        i = 1
         
         # Train the model on the training data
         for [X, y] in train_loader:
+            X = X.to(device)
+            y = y.to(device)
             optimizer.zero_grad()
             output = model.forward(X)
             output = output.flatten()
-            print(output.shape)
+            try:
+                loss = critization(output, y)
+                loss.backward()
+                optimizer.step()
+                train_loss += loss.item() * X.size(0)
+
+            except Exception as e:
+                print(f"output: {output}, y: {y}")
+                print(e)
+                raise
             
-            print(y.shape)
-            loss = F.huber_loss(y, output)
-            
-            loss.backward()
-            optimizer.step()
-            train_loss += loss.item() * X.size(0)
-            print(f"Epoch: {epoch + 1}, output: {output}, y: {y}, Train loss: {loss.item()}")
+
+            if(i % 5000 == 0):
+                print(f"Epoch {epoch + 1} Training, Progress: {(i / len(train_loader)) * 100}%")
+                print(f"Current loss: {loss.item()}")
+            i += 1
             
         # Evaluate the model on the validation data
         model.eval()
         with torch.no_grad():
+            i = 0
             for [X, y] in valid_loader:
+                X = X.to(device)
+                y = y.to(device)
                 output = model(X)
                 output = output.flatten()
-                loss = F.huber_loss(output, y)
+                loss = critization(output, y)
                 valid_loss += loss.item() * X.size(0)
+                if(i % 1000 == 0):
+                    print(f"Epoch {epoch + 1} Training, Progress: {(i / len(valid_loader)) * 100}%")
+                    print(f"Current loss: {loss.item()}")
+                i += 1
         
         # Print the validation loss for this epoch
         train_loss /= len(train_data)
@@ -245,15 +268,18 @@ def train_model(train_loader):
         if valid_loss < best_valid_loss:
             best_valid_loss = valid_loss
             best_model = model.state_dict()
-    
+        
     # Train the best model on the whole training data
     model.load_state_dict(best_model)
     model.train()
+    print(f"Best validation loss: {best_valid_loss}")
     for [X, y] in train_loader:
+        X = X.to(device)
+        y = y.to(device)
         optimizer.zero_grad()
         output = model(X)
         output = output.flatten()
-        loss = F.huber_loss(output, y)
+        loss = critization(output, y)
         loss.backward()
         optimizer.step()
         
@@ -311,3 +337,5 @@ if __name__ == '__main__':
     # test the model on the test data
     test_model(model, test_loader)
     print("Results saved to results.txt")
+
+
