@@ -24,7 +24,7 @@ else:
     print("Have to use CPU")
 
 num_workers = 12
-batch_size = 1
+batch_size = 256
 def generate_embeddings():
     """
     Transform, resize and normalize the images and then use a pretrained model to extract 
@@ -139,20 +139,19 @@ def create_loader_from_np(X, y = None, train = True, batch_size=batch_size, shuf
     return loader
 
 # TODO: define a model. Here, the basic structure is defined, but you need to fill in the details
-# TODO: define a model. Here, the basic structure is defined, but you need to fill in the details
 class Net(nn.Module):
     """
     The model class, which defines our classifier.
     """
-    def __init__(self):
+    def __init__(self, fstHL, sndHL,thdHL):
         """
         The constructor of the model.
         """
         super().__init__()
-        self.lin1 = nn.Linear(3000, 50)
-        self.lin2 = nn.Linear(50, 30)
-        self.lin3 = nn.Linear(30, 10)
-        self.lin4 = nn.Linear(10, 1)
+        self.lin1 = nn.Linear(3000, fstHL)
+        self.lin2 = nn.Linear(fstHL, sndHL)
+        self.lin3 = nn.Linear(sndHL, thdHL)
+        self.lin4 = nn.Linear(thdHL, 1)
 
 
     def forward(self, x):
@@ -172,7 +171,7 @@ class Net(nn.Module):
         
     
 
-def train_model(train_loader):
+def train_model(train_loader, fstHL, sndHL, thdHL, learning_rate):
     """
     The training procedure of the model; it accepts the training data, defines the model 
     and then trains it.
@@ -182,7 +181,7 @@ def train_model(train_loader):
     output: model: torch.nn.Module, the trained model
     """
     # Define the model architecture
-    model = Net()
+    model = Net(fstHL, sndHL, thdHL)
 
     # Set the model to train mode and move it to the device
     model.train()
@@ -190,7 +189,7 @@ def train_model(train_loader):
 
     
    
-    optimizer = optim.Adam(model.parameters(), lr=0.001)
+    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
    
     critization = nn.BCELoss()
     
@@ -237,9 +236,10 @@ def train_model(train_loader):
                 raise
             
 
-            if(i % 5000 == 0):
-                print(f"Epoch {epoch + 1} Training, Progress: {(i / len(train_loader)) * 100}%")
-                print(f"Current loss: {loss.item()}")
+            if(i % 50 == 0):
+                #print(f"Epoch {epoch + 1} Training, Progress: {(i / len(train_loader)) * 100}%")
+                #print(f"Current loss: {loss.item()}, current X.size(1): {X.size(1)}")
+                pass
             i += 1
             
         # Evaluate the model on the validation data
@@ -254,15 +254,16 @@ def train_model(train_loader):
                 loss = critization(output, y)
                 valid_loss += loss.item() * X.size(0)
                 if(i % 1000 == 0):
-                    print(f"Epoch {epoch + 1} Training, Progress: {(i / len(valid_loader)) * 100}%")
-                    print(f"Current loss: {loss.item()}")
+                    #print(f"Epoch {epoch + 1} Training, Progress: {(i / len(valid_loader)) * 100}%")
+                    #print(f"Current loss: {loss.item()}")
+                    pass
                 i += 1
         
         # Print the validation loss for this epoch
         train_loss /= len(train_data)
         valid_loss /= len(valid_data)
-        print('Epoch: {} \tTraining Loss: {:.6f} \tValidation Loss: {:.6f}'.format(
-            epoch+1, train_loss, valid_loss))
+        #print('Epoch: {} \tTraining Loss: {:.6f} \tValidation Loss: {:.6f}'.format(
+            #epoch+1, train_loss, valid_loss))
         
         # Save the best model based on the validation loss
         if valid_loss < best_valid_loss:
@@ -272,7 +273,7 @@ def train_model(train_loader):
     # Train the best model on the whole training data
     model.load_state_dict(best_model)
     model.train()
-    print(f"Best validation loss: {best_valid_loss}")
+    #print(f"Best validation loss: {best_valid_loss}")
     for [X, y] in train_loader:
         X = X.to(device)
         y = y.to(device)
@@ -283,7 +284,7 @@ def train_model(train_loader):
         loss.backward()
         optimizer.step()
         
-    return model
+    return model, best_valid_loss
 
 
 def test_model(model, loader):
@@ -301,11 +302,9 @@ def test_model(model, loader):
     # Iterate over the test data
     with torch.no_grad(): # We don't need to compute gradients for testing
         for [x_batch] in loader:
-            x_batch= x_batch
+            x_batch= x_batch.to(device)
             predicted = model(x_batch)
-            predicted = predicted.flatten()
             predicted = predicted.cpu().numpy()
-            print(f"The length of predicted is: {len(predicted)}")
             # Rounding the predictions to 0 or 1
             predicted[predicted >= 0.5] = 1
             predicted[predicted < 0.5] = 0
@@ -327,15 +326,30 @@ if __name__ == '__main__':
     X, y = get_data(TRAIN_TRIPLETS)
     X_test, _ = get_data(TEST_TRIPLETS, train=False)
 
-    # Create data loaders for the training and testing data
-    train_loader = create_loader_from_np(X, y, train = True, batch_size=64)
-    test_loader = create_loader_from_np(X_test, train = False, batch_size=1, shuffle=False)
 
-    # define a model and train it
-    model = train_model(train_loader)
+    train_loader = create_loader_from_np(X, y, train = True, batch_size=64)
+
+    fstHL = 200
+    sndHL = 40
+    thdHL = 30
+    learning_rates = [0.1, 0.01, 0.001, 0.0001, 0.00001]
+
+    best_value = float('inf')
     
+    for rate in learning_rates:
+        model, value = train_model(train_loader, fstHL, sndHL, thdHL, rate)
+        if value < best_value:
+            best_rate = rate
+            best_value = value
+            best_model = model
+
+        print(f"Current best rate: {best_rate}  with Loss: {best_value}")
+
+   
+
+    test_loader = create_loader_from_np(X_test, train = False, batch_size=2048, shuffle=False)
     # test the model on the test data
-    test_model(model, test_loader)
+    test_model(best_model, test_loader)
     print("Results saved to results.txt")
 
 
