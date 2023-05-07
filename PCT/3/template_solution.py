@@ -11,7 +11,7 @@ from torchvision import transforms
 import torchvision.datasets as datasets
 import torch.nn as nn
 import torch.nn.functional as F
-from torchvision.models import resnet50, ResNet50_Weights, vgg16
+from torchvision.models import resnet50, ResNet50_Weights
 import torch.optim as optim
 
 
@@ -25,51 +25,63 @@ else:
 
 num_workers = 12
 batch_size = 256
+
 def generate_embeddings():
     """
     Transform, resize and normalize the images and then use a pretrained model to extract 
     the embeddings.
     """
-    train_transforms = transforms.Compose([
-        transforms.RandomResizedCrop(256),
-        transforms.RandomHorizontalFlip(),
+    # Define a transform to pre-process the images
+    transform = transforms.Compose([
+        transforms.Resize((224, 224)),
         transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                             std=[0.229, 0.224, 0.225])
+        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
     ])
 
-    train_dataset = datasets.ImageFolder(root="dataset/", transform=train_transforms)
-    # Hint: adjust batch_size and num_workers to your PC configuration, so that you don't 
-    # run out of memory
-    train_loader = DataLoader(dataset=train_dataset,
-                              batch_size=batch_size,
-                              shuffle=False,
-                              pin_memory=True, num_workers=num_workers)
+    # Load the dataset and apply the transform
+    dataset = datasets.ImageFolder(root="dataset/", transform=transform)
 
-    # TODO: define a model for extraction of the embeddings (Hint: load a pretrained model,
-    #  more info here: https://pytorch.org/vision/stable/models.html)
-    vgg = vgg16(pretrained=True)
-    vgg.classifier[6] = nn.Linear(4096, 3000)
-    model = nn.Sequential(*list(vgg.children())[:-1])
+    # Define a data loader for the dataset
+    loader = DataLoader(dataset=dataset,
+                        batch_size=64,
+                        shuffle=False,
+                        pin_memory=True, num_workers=16)
+
+    # Load a pretrained ResNet model
+    model = resnet50(weights = ResNet50_Weights.DEFAULT)
+    # Remove the last layer to access the embeddings
     model.eval()
+    model = model.to(device)
 
-    # Generate embeddings for all images in the dataset
+    for param in model.parameters():
+        param.requires_grad = False
+
+    model.fc = nn.Identity()
+
+    # Extract the embeddings
     embeddings = []
-    i = 0
-    for images, labels in train_loader:
-        i += 1.0
-        print(f"working: {i/len(train_loader)}%")
+    i = 1
+    for images, _ in loader:
+        print(f"Working: {(i/len(loader))*100}%")
+        images = images.to(device)
         with torch.no_grad():
-            # Forward pass through the model to extract the embeddings
-            outputs = model(images)
-            embeddings.append(outputs)
+            features = model(images)
+        embeddings.append(features.cpu().numpy().reshape(images.shape[0], -1))
+        i += 1
+    embeddings = np.concatenate(embeddings, axis=0)
 
-    # Concatenate the embeddings into a single numpy array
-    embeddings = torch.cat(embeddings).numpy()
+
+    # for images, _ in loader:
+    #     with torch.no_grad():
+    #         features = model(images)
+    #     embeddings.append(features.cpu().numpy().reshape(images.shape[0], -1))
+    # embeddings = np.concatenate(embeddings, axis=0)
 
     # Save the embeddings to a file
     np.save('dataset/embeddings.npy', embeddings)
-    return embeddings
+
+
+
 
 
 def get_data(file, train=True):
@@ -92,7 +104,7 @@ def get_data(file, train=True):
                                          transform=None)
     filenames = [s[0].split('/')[-1].replace('.jpg', '') for s in train_dataset.samples]
     embeddings = np.load('dataset/embeddings.npy')
-    
+    print(f"Size of embeddings: {embeddings.shape}")
     for i in range(len(embeddings)):
         embeddings_norm = np.linalg.norm(embeddings[i])
         embeddings[i] /= embeddings_norm
@@ -148,10 +160,10 @@ class Net(nn.Module):
         The constructor of the model.
         """
         super().__init__()
-        self.lin1 = nn.Linear(3000, fstHL)
+        self.lin1 = nn.Linear(2048, fstHL)
         self.lin2 = nn.Linear(fstHL, sndHL)
         self.lin3 = nn.Linear(sndHL, thdHL)
-        self.lin4 = nn.Linear(thdHL, 1)
+        self.lin4 = nn.Linear(thdHL, 128)
 
 
     def forward(self, x):
@@ -191,7 +203,7 @@ def train_model(train_loader, fstHL, sndHL, thdHL, learning_rate):
    
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
    
-    critization = nn.BCELoss()
+    critization = nn.TripletMarginLoss(margin=1.0)
     
     # Define the number of epochs and the validation split
     n_epochs = 10
@@ -222,24 +234,25 @@ def train_model(train_loader, fstHL, sndHL, thdHL, learning_rate):
             X = X.to(device)
             y = y.to(device)
             optimizer.zero_grad()
-            output = model.forward(X)
-            output = output.flatten()
-            try:
-                loss = critization(output, y)
-                loss.backward()
-                optimizer.step()
-                train_loss += loss.item() * X.size(0)
+            output1 = model.forward(X[:,:2048])
+            output2 = model.forward(X[:,2048:2048*2])
+            output3 = model.forward(X[:,2048*2:2048*3])
 
-            except Exception as e:
-                print(f"output: {output}, y: {y}")
-                print(e)
-                raise
             
+            if y[0] == 1:
+                loss = critization(output1, output2, output3)
+            else:
+                loss = critization(output1, output3, output2)
+            
+            loss.backward()
+            optimizer.step()
+            train_loss += loss.item() * X.size(0)
 
-            if(i % 50 == 0):
+            if(i % 30 == 0):
                 #print(f"Epoch {epoch + 1} Training, Progress: {(i / len(train_loader)) * 100}%")
                 #print(f"Current loss: {loss.item()}, current X.size(1): {X.size(1)}")
-                pass
+                print(f"Current Trainloss: {abs(loss.item() - 1)}")
+                
             i += 1
             
         # Evaluate the model on the validation data
@@ -249,9 +262,14 @@ def train_model(train_loader, fstHL, sndHL, thdHL, learning_rate):
             for [X, y] in valid_loader:
                 X = X.to(device)
                 y = y.to(device)
-                output = model(X)
-                output = output.flatten()
-                loss = critization(output, y)
+                output1 = model.forward(X[:,:2048])
+                output2 = model.forward(X[:,2048:2048*2])
+                output3 = model.forward(X[:,2048*2:2048*3])
+                if y[0] == 1:
+                    loss = critization(output1, output2, output3)
+                else:
+                    loss = critization(output1, output3, output2)
+                
                 valid_loss += loss.item() * X.size(0)
                 if(i % 1000 == 0):
                     #print(f"Epoch {epoch + 1} Training, Progress: {(i / len(valid_loader)) * 100}%")
@@ -262,10 +280,10 @@ def train_model(train_loader, fstHL, sndHL, thdHL, learning_rate):
         # Print the validation loss for this epoch
         train_loss /= len(train_data)
         valid_loss /= len(valid_data)
-        #print('Epoch: {} \tTraining Loss: {:.6f} \tValidation Loss: {:.6f}'.format(
-            #epoch+1, train_loss, valid_loss))
+        print('Epoch: {} \tTraining Loss: {:.6f} \tValidation Loss: {:.6f}'.format(
+            epoch+1, train_loss, valid_loss))
         
-        # Save the best model based on the validation loss
+        # Save the best model based on the validation loss evtl löschen
         if valid_loss < best_valid_loss:
             best_valid_loss = valid_loss
             best_model = model.state_dict()
@@ -278,11 +296,17 @@ def train_model(train_loader, fstHL, sndHL, thdHL, learning_rate):
         X = X.to(device)
         y = y.to(device)
         optimizer.zero_grad()
-        output = model(X)
-        output = output.flatten()
-        loss = critization(output, y)
+        output1 = model.forward(X[:,:2048])
+        output2 = model.forward(X[:,2048:2048*2])
+        output3 = model.forward(X[:,2048*2:2048*3])
+        if y[1] == 1:
+            loss = critization(output1, output2, output3)
+        else:
+            loss = critization(output1, output3, output2)
+            
         loss.backward()
         optimizer.step()
+
         
     return model, best_valid_loss
 
@@ -303,12 +327,22 @@ def test_model(model, loader):
     with torch.no_grad(): # We don't need to compute gradients for testing
         for [x_batch] in loader:
             x_batch= x_batch.to(device)
-            predicted = model(x_batch)
-            predicted = predicted.cpu().numpy()
+            print(f"Size x_batch: {x_batch.shape}")
+            predicted1 = model(x_batch[:,:2048])
+            predicted2 = model(x_batch[:,2048:2048*2])
+            predicted3 = model(x_batch[:,2048*2:2048*3])
+            predicted1 = predicted1.cpu().numpy()
+            predicted2 = predicted2.cpu().numpy()
+            predicted3 = predicted3.cpu().numpy()
+
+
+            norm1 = np.linalg.norm(predicted1 - predicted2)
+            norm2 = np.linalg.norm(predicted1 - predicted3)
             # Rounding the predictions to 0 or 1
-            predicted[predicted >= 0.5] = 1
-            predicted[predicted < 0.5] = 0
-            predictions.append(predicted)
+            if norm1 >= norm2:
+                predictions.append(0)
+            else:
+                predictions.append(1)
         predictions = np.vstack(predictions)
     np.savetxt("results.txt", predictions, fmt='%i')
 
@@ -329,25 +363,20 @@ if __name__ == '__main__':
 
     train_loader = create_loader_from_np(X, y, train = True, batch_size=64)
 
-    fstHL = 200
-    sndHL = 40
-    thdHL = 30
-    learning_rates = [0.1, 0.01, 0.001, 0.0001, 0.00001]
+    fstHL = 256
+    sndHL = 128
+    thdHL = 128
+    
+
 
     best_value = float('inf')
     
-    for rate in learning_rates:
-        model, value = train_model(train_loader, fstHL, sndHL, thdHL, rate)
-        if value < best_value:
-            best_rate = rate
-            best_value = value
-            best_model = model
-
-        print(f"Current best rate: {best_rate}  with Loss: {best_value}")
+    
+    best_model, value = train_model(train_loader, fstHL, sndHL, thdHL, 0.001)
 
    
 
-    test_loader = create_loader_from_np(X_test, train = False, batch_size=2048, shuffle=False)
+    test_loader = create_loader_from_np(X_test, train = False, batch_size=1, shuffle=False)
     # test the model on the test data
     test_model(best_model, test_loader)
     print("Results saved to results.txt")

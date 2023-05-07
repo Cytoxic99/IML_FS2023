@@ -81,6 +81,7 @@ def get_data(file, train=True):
             X.append(np.hstack([emb[0], emb[2], emb[1]]))
             y.append(0)
     X = np.vstack(X)
+    print(f"Shape of X: {X.shape}")
     y = np.hstack(y)
     return X, y
 
