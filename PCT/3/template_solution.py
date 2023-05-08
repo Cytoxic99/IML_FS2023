@@ -39,13 +39,10 @@ def generate_embeddings():
     ])
 
     # Load the dataset and apply the transform
-    dataset = datasets.ImageFolder(root="dataset/", transform=transform)
+    dataset = datasets.ImageFolder(root="dataset/")
 
     # Define a data loader for the dataset
-    loader = DataLoader(dataset=dataset,
-                        batch_size=64,
-                        shuffle=False,
-                        pin_memory=True, num_workers=16)
+  
 
     # Load a pretrained ResNet model
     model = resnet50(weights = ResNet50_Weights.DEFAULT)
@@ -61,14 +58,15 @@ def generate_embeddings():
     # Extract the embeddings
     embeddings = []
     i = 1
-    for images, _ in loader:
-        print(f"Working: {(i/len(loader))*100}%")
-        images = images.to(device)
+    for images, _ in dataset:
+        print(f"Working: {(i/len(dataset))*100}%")
+        
         with torch.no_grad():
-            features = model(images)
-        embeddings.append(features.cpu().numpy().reshape(images.shape[0], -1))
+            features_transformed = transform(images).to(device)
+            features_extracted = model(features_transformed.unsqueeze(0))[0]
+        embeddings.append(features_extracted.cpu().numpy())
         i += 1
-    embeddings = np.concatenate(embeddings, axis=0)
+    
 
 
     # for images, _ in loader:
@@ -125,7 +123,7 @@ def get_data(file, train=True):
             X.append(np.hstack([emb[0], emb[2], emb[1]]))
             y.append(0)
     X = np.vstack(X)
-    y = np.hstack(y)
+    y = np.vstack(y)
 
     return X, y
 
@@ -178,7 +176,7 @@ class Net(nn.Module):
         x = F.relu(self.lin1(x))
         x = F.relu(self.lin2(x))
         x = F.relu(self.lin3(x))
-        x = F.sigmoid(self.lin4(x))
+        x = self.lin4(x)
         return x
         
     
@@ -203,7 +201,7 @@ def train_model(train_loader, fstHL, sndHL, thdHL, learning_rate):
    
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
    
-    critization = nn.TripletMarginLoss(margin=1.0)
+    critization = F.triplet_margin_loss
     
     # Define the number of epochs and the validation split
     n_epochs = 10
@@ -227,7 +225,7 @@ def train_model(train_loader, fstHL, sndHL, thdHL, learning_rate):
     for epoch in range(n_epochs):
         train_loss = 0.0
         valid_loss = 0.0
-        i = 1
+        k = 1
         
         # Train the model on the training data
         for [X, y] in train_loader:
@@ -238,23 +236,24 @@ def train_model(train_loader, fstHL, sndHL, thdHL, learning_rate):
             output2 = model.forward(X[:,2048:2048*2])
             output3 = model.forward(X[:,2048*2:2048*3])
 
-            
-            if y[0] == 1:
-                loss = critization(output1, output2, output3)
-            else:
-                loss = critization(output1, output3, output2)
-            
-            loss.backward()
-            optimizer.step()
-            train_loss += loss.item() * X.size(0)
+            batch_loss = torch.zeros(1, dtype=X.dtype, device=device)  # initialize batch loss to zero
+            for i in range(X.size(0)):  # loop over rows in the batch
+                if y[i] == 0:
+                    loss = critization(output1[i], output2[i], output3[i])
+                else:
+                    loss = critization(output1[i], output3[i], output2[i])
+                batch_loss += loss  # add loss for this row to batch loss
 
-            if(i % 30 == 0):
+            batch_loss /= X.size(0)  # compute average loss per sample in the batch
+            batch_loss.backward()
+            optimizer.step()
+            train_loss += batch_loss.item() * X.size(0)
+
+            if(k % 30 == 0):
                 #print(f"Epoch {epoch + 1} Training, Progress: {(i / len(train_loader)) * 100}%")
                 #print(f"Current loss: {loss.item()}, current X.size(1): {X.size(1)}")
-                print(f"Current Trainloss: {abs(loss.item() - 1)}")
+                pass
                 
-            i += 1
-            
         # Evaluate the model on the validation data
         model.eval()
         with torch.no_grad():
@@ -265,17 +264,17 @@ def train_model(train_loader, fstHL, sndHL, thdHL, learning_rate):
                 output1 = model.forward(X[:,:2048])
                 output2 = model.forward(X[:,2048:2048*2])
                 output3 = model.forward(X[:,2048*2:2048*3])
-                if y[0] == 1:
-                    loss = critization(output1, output2, output3)
-                else:
-                    loss = critization(output1, output3, output2)
                 
-                valid_loss += loss.item() * X.size(0)
-                if(i % 1000 == 0):
-                    #print(f"Epoch {epoch + 1} Training, Progress: {(i / len(valid_loader)) * 100}%")
-                    #print(f"Current loss: {loss.item()}")
-                    pass
-                i += 1
+                batch_loss = torch.zeros(1, dtype=X.dtype, device=device) 
+                for i in range(X.size(0)):  # loop over rows in the batch
+                    if y[i] == 0:
+                        loss = critization(output1[i], output2[i], output3[i])
+                    else:
+                        loss = critization(output1[i], output3[i], output2[i])
+                    batch_loss += loss 
+                    batch_loss /= X.size(0)  
+                    valid_loss += batch_loss.item() * X.size(0)
+                   
         
         # Print the validation loss for this epoch
         train_loss /= len(train_data)
@@ -299,12 +298,19 @@ def train_model(train_loader, fstHL, sndHL, thdHL, learning_rate):
         output1 = model.forward(X[:,:2048])
         output2 = model.forward(X[:,2048:2048*2])
         output3 = model.forward(X[:,2048*2:2048*3])
-        if y[1] == 1:
-            loss = critization(output1, output2, output3)
-        else:
-            loss = critization(output1, output3, output2)
+        batch_loss = torch.zeros(1, dtype=X.dtype, device=device) 
+        for i in range(X.size(0)):  # loop over rows in the batch
+            if y[i] == 0:
+                loss = critization(output1[i], output2[i], output3[i])
+            else:
+                loss = critization(output1[i], output3[i], output2[i])
+            batch_loss += loss
+            batch_loss /= X.size(0) 
             
-        loss.backward()
+            
+                   
+            
+        batch_loss.backward()
         optimizer.step()
 
         
@@ -339,7 +345,7 @@ def test_model(model, loader):
             norm1 = np.linalg.norm(predicted1 - predicted2)
             norm2 = np.linalg.norm(predicted1 - predicted3)
             # Rounding the predictions to 0 or 1
-            if norm1 >= norm2:
+            if norm1 <= norm2:
                 predictions.append(0)
             else:
                 predictions.append(1)
@@ -372,7 +378,7 @@ if __name__ == '__main__':
     best_value = float('inf')
     
     
-    best_model, value = train_model(train_loader, fstHL, sndHL, thdHL, 0.001)
+    best_model, value = train_model(train_loader, fstHL, sndHL, thdHL, 0.01)
 
    
 
