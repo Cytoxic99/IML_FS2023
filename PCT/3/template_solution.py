@@ -1,3 +1,4 @@
+
 # This serves as a template which will guide you through the implementation of this task.  It is advised
 # to first read the whole template and get a sense of the overall structure of the code before trying to fill in any of the TODO gaps
 # First, we import necessary libraries:
@@ -11,7 +12,7 @@ from torchvision import transforms
 import torchvision.datasets as datasets
 import torch.nn as nn
 import torch.nn.functional as F
-from torchvision.models import resnet50, ResNet50_Weights
+from torchvision.models import resnet152, ResNet152_Weights
 import torch.optim as optim
 
 
@@ -45,7 +46,7 @@ def generate_embeddings():
   
 
     # Load a pretrained ResNet model
-    model = resnet50(weights = ResNet50_Weights.DEFAULT)
+    model = resnet152(weights = ResNet152_Weights.DEFAULT)
     # Remove the last layer to access the embeddings
     model.eval()
     model = model.to(device)
@@ -149,18 +150,25 @@ def create_loader_from_np(X, y = None, train = True, batch_size=batch_size, shuf
     return loader
 
 # TODO: define a model. Here, the basic structure is defined, but you need to fill in the details
+
 class Net(nn.Module):
     """
     The model class, which defines our classifier.
     """
-    def __init__(self, fstHL, sndHL,thdHL):
+    def __init__(self, fstHL, sndHL, thdHL):
         """
         The constructor of the model.
         """
         super().__init__()
         self.lin1 = nn.Linear(2048, fstHL)
+        self.bn1 = nn.BatchNorm1d(fstHL)
+        self.dropout1 = nn.Dropout(p=0.75)
         self.lin2 = nn.Linear(fstHL, sndHL)
+        self.bn2 = nn.BatchNorm1d(sndHL)
+        self.dropout2 = nn.Dropout(p=0.75)
         self.lin3 = nn.Linear(sndHL, thdHL)
+        self.bn3 = nn.BatchNorm1d(thdHL)
+        self.dropout3 = nn.Dropout(p=0.75)
         self.lin4 = nn.Linear(thdHL, 128)
 
 
@@ -173,9 +181,12 @@ class Net(nn.Module):
         output: x: torch.Tensor, the output of the model
         """
         
-        x = F.relu(self.lin1(x))
-        x = F.relu(self.lin2(x))
-        x = F.relu(self.lin3(x))
+        x = F.relu(self.bn1(self.lin1(x)))
+        x = self.dropout1(x)
+        x = F.relu(self.bn2(self.lin2(x)))
+        x = self.dropout2(x)
+        x = F.relu(self.bn3(self.lin3(x)))
+        x = self.dropout3(x)
         x = self.lin4(x)
         return x
         
@@ -212,15 +223,15 @@ def train_model(train_loader, fstHL, sndHL, thdHL, learning_rate):
     n_valid_examples = int(n_train_examples * validation_split)
     
     # Split the training data into training and validation sets
-    train_data, valid_data = torch.utils.data.random_split(train_loader.dataset, 
+    train2_data, valid_data = torch.utils.data.random_split(train_loader.dataset, 
                                                            [n_train_examples - n_valid_examples, 
                                                             n_valid_examples])
     
     # Create data loaders for the training and validation sets
-    train_loader = torch.utils.data.DataLoader(train_data, batch_size=batch_size, shuffle=True)
-    valid_loader = torch.utils.data.DataLoader(valid_data, batch_size=batch_size, shuffle=False)
-    
-    # Train the model
+    train_loader = torch.utils.data.DataLoader(train_loader.dataset, batch_size=batch_size, shuffle=True)
+    #train2_loader = torch.utils.data.DataLoader(train2_data, batch_size=batch_size, shuffle=True)
+    #valid_loader = torch.utils.data.DataLoader(valid_data, batch_size=batch_size, shuffle=False)
+        # Train the model
     best_valid_loss = float('inf')
     for epoch in range(n_epochs):
         train_loss = 0.0
@@ -238,7 +249,7 @@ def train_model(train_loader, fstHL, sndHL, thdHL, learning_rate):
 
             batch_loss = torch.zeros(1, dtype=X.dtype, device=device)  # initialize batch loss to zero
             for i in range(X.size(0)):  # loop over rows in the batch
-                if y[i] == 0:
+                if y[i] == 1:
                     loss = critization(output1[i], output2[i], output3[i])
                 else:
                     loss = critization(output1[i], output3[i], output2[i])
@@ -250,10 +261,12 @@ def train_model(train_loader, fstHL, sndHL, thdHL, learning_rate):
             train_loss += batch_loss.item() * X.size(0)
 
             if(k % 30 == 0):
-                #print(f"Epoch {epoch + 1} Training, Progress: {(i / len(train_loader)) * 100}%")
-                #print(f"Current loss: {loss.item()}, current X.size(1): {X.size(1)}")
+                print(f"Epoch {epoch + 1} Training, Progress: {(k / len(train_loader)) * 100}%")
+                #print(f"Current loss: {batch_loss.item()}, current X.size(1): {X.size(1)}")
                 pass
-                
+            k +=1
+        
+        '''
         # Evaluate the model on the validation data
         model.eval()
         with torch.no_grad():
@@ -267,7 +280,7 @@ def train_model(train_loader, fstHL, sndHL, thdHL, learning_rate):
                 
                 batch_loss = torch.zeros(1, dtype=X.dtype, device=device) 
                 for i in range(X.size(0)):  # loop over rows in the batch
-                    if y[i] == 0:
+                    if y[i] == 1:
                         loss = critization(output1[i], output2[i], output3[i])
                     else:
                         loss = critization(output1[i], output3[i], output2[i])
@@ -275,9 +288,11 @@ def train_model(train_loader, fstHL, sndHL, thdHL, learning_rate):
                     batch_loss /= X.size(0)  
                     valid_loss += batch_loss.item() * X.size(0)
                    
-        
+        '''
         # Print the validation loss for this epoch
-        train_loss /= len(train_data)
+        train_loss /= len(train_loader.dataset)
+        print(f"Epoch {epoch + 1} Train-Loss {train_loss}")
+        '''
         valid_loss /= len(valid_data)
         print('Epoch: {} \tTraining Loss: {:.6f} \tValidation Loss: {:.6f}'.format(
             epoch+1, train_loss, valid_loss))
@@ -290,31 +305,33 @@ def train_model(train_loader, fstHL, sndHL, thdHL, learning_rate):
     # Train the best model on the whole training data
     model.load_state_dict(best_model)
     model.train()
+    
     #print(f"Best validation loss: {best_valid_loss}")
-    for [X, y] in train_loader:
-        X = X.to(device)
-        y = y.to(device)
-        optimizer.zero_grad()
-        output1 = model.forward(X[:,:2048])
-        output2 = model.forward(X[:,2048:2048*2])
-        output3 = model.forward(X[:,2048*2:2048*3])
-        batch_loss = torch.zeros(1, dtype=X.dtype, device=device) 
-        for i in range(X.size(0)):  # loop over rows in the batch
-            if y[i] == 0:
-                loss = critization(output1[i], output2[i], output3[i])
-            else:
-                loss = critization(output1[i], output3[i], output2[i])
-            batch_loss += loss
-            batch_loss /= X.size(0) 
-            
-            
-                   
-            
-        batch_loss.backward()
-        optimizer.step()
+    for epoch in range(n_epochs):
+        for [X, y] in train2_loader:
+            X = X.to(device)
+            y = y.to(device)
+            optimizer.zero_grad()
+            output1 = model.forward(X[:,:2048])
+            output2 = model.forward(X[:,2048:2048*2])
+            output3 = model.forward(X[:,2048*2:2048*3])
+            batch_loss = torch.zeros(1, dtype=X.dtype, device=device) 
+            for i in range(X.size(0)):  # loop over rows in the batch
+                if y[i] == 1:
+                    loss = critization(output1[i], output2[i], output3[i])
+                else:
+                    loss = critization(output1[i], output3[i], output2[i])
+                batch_loss += loss
+                batch_loss /= X.size(0) 
+                
+                
+                       
+                
+            batch_loss.backward()
+            optimizer.step()
 
-        
-    return model, best_valid_loss
+        '''
+    return model
 
 
 def test_model(model, loader):
@@ -333,7 +350,6 @@ def test_model(model, loader):
     with torch.no_grad(): # We don't need to compute gradients for testing
         for [x_batch] in loader:
             x_batch= x_batch.to(device)
-            print(f"Size x_batch: {x_batch.shape}")
             predicted1 = model(x_batch[:,:2048])
             predicted2 = model(x_batch[:,2048:2048*2])
             predicted3 = model(x_batch[:,2048*2:2048*3])
@@ -346,9 +362,9 @@ def test_model(model, loader):
             norm2 = np.linalg.norm(predicted1 - predicted3)
             # Rounding the predictions to 0 or 1
             if norm1 <= norm2:
-                predictions.append(0)
-            else:
                 predictions.append(1)
+            else:
+                predictions.append(0)
         predictions = np.vstack(predictions)
     np.savetxt("results.txt", predictions, fmt='%i')
 
@@ -378,7 +394,7 @@ if __name__ == '__main__':
     best_value = float('inf')
     
     
-    best_model, value = train_model(train_loader, fstHL, sndHL, thdHL, 0.01)
+    best_model = train_model(train_loader, fstHL, sndHL, thdHL, 0.001)
 
    
 
