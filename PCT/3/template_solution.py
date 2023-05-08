@@ -4,6 +4,7 @@
 # First, we import necessary libraries:
 import copy
 import numpy as np
+from torch.nn.modules import BatchNorm1d
 from torchvision import transforms
 from torch.utils.data import DataLoader, TensorDataset, random_split
 import os
@@ -12,7 +13,7 @@ from torchvision import transforms
 import torchvision.datasets as datasets
 import torch.nn as nn
 import torch.nn.functional as F
-from torchvision.models import resnet152, ResNet152_Weights
+from torchvision.models import resnet50, ResNet50_Weights
 import torch.optim as optim
 
 
@@ -36,17 +37,17 @@ def generate_embeddings():
     transform = transforms.Compose([
         transforms.Resize((224, 224)),
         transforms.ToTensor(),
-        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+        transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5])
     ])
 
     # Load the dataset and apply the transform
-    dataset = datasets.ImageFolder(root="dataset/")
+    dataset = datasets.ImageFolder(root="dataset/", transform=transform)
 
     # Define a data loader for the dataset
-  
+    loader = torch.utils.data.DataLoader(dataset, batch_size=64, shuffle=False, num_workers=4)
 
-    # Load a pretrained ResNet model
-    model = resnet152(weights = ResNet152_Weights.DEFAULT)
+    # Load a pretrained Food101 model
+    model = resnet50(weights=ResNet50_Weights.IMAGENET1K_V1)
     # Remove the last layer to access the embeddings
     model.eval()
     model = model.to(device)
@@ -58,27 +59,20 @@ def generate_embeddings():
 
     # Extract the embeddings
     embeddings = []
-    i = 1
-    for images, _ in dataset:
+    i = 0
+    for images, _ in loader:
         print(f"Working: {(i/len(dataset))*100}%")
-        
+
         with torch.no_grad():
-            features_transformed = transform(images).to(device)
-            features_extracted = model(features_transformed.unsqueeze(0))[0]
-        embeddings.append(features_extracted.cpu().numpy())
+            features_transformed = images.to(device)
+            features_extracted = model(features_transformed)
+            print(f"Shape of features_extracted: {features_extracted.shape}")
+            embeddings.append(features_extracted.cpu().numpy())
         i += 1
-    
-
-
-    # for images, _ in loader:
-    #     with torch.no_grad():
-    #         features = model(images)
-    #     embeddings.append(features.cpu().numpy().reshape(images.shape[0], -1))
-    # embeddings = np.concatenate(embeddings, axis=0)
-
+    embeddings = np.concatenate(embeddings, axis=0)
+    print(f"Embeddings: {embeddings.shape}")    
     # Save the embeddings to a file
     np.save('dataset/embeddings.npy', embeddings)
-
 
 
 
@@ -104,9 +98,9 @@ def get_data(file, train=True):
     filenames = [s[0].split('/')[-1].replace('.jpg', '') for s in train_dataset.samples]
     embeddings = np.load('dataset/embeddings.npy')
     print(f"Size of embeddings: {embeddings.shape}")
-    for i in range(len(embeddings)):
-        embeddings_norm = np.linalg.norm(embeddings[i])
-        embeddings[i] /= embeddings_norm
+    # for i in range(len(embeddings)):
+    #     embeddings_norm = np.linalg.norm(embeddings[i])
+    #     embeddings[i] /= embeddings_norm
     
     # use the individual embeddings to generate the features and labels for triplets
     file_to_embedding = {}
@@ -127,6 +121,8 @@ def get_data(file, train=True):
     y = np.vstack(y)
 
     return X, y
+
+
 
 # Hint: adjust batch_size and num_workers to your PC configuration, so that you don't run out of memory
 def create_loader_from_np(X, y = None, train = True, batch_size=batch_size, shuffle=True, num_workers = num_workers):
@@ -155,7 +151,7 @@ class Net(nn.Module):
     """
     The model class, which defines our classifier.
     """
-    def __init__(self, fstHL, sndHL, thdHL):
+    def __init__(self, fstHL, sndHL, thdHL, fthHL, fiftHL, sixtHL, sevtHL):
         """
         The constructor of the model.
         """
@@ -165,11 +161,23 @@ class Net(nn.Module):
         self.dropout1 = nn.Dropout(p=0.75)
         self.lin2 = nn.Linear(fstHL, sndHL)
         self.bn2 = nn.BatchNorm1d(sndHL)
-        self.dropout2 = nn.Dropout(p=0.75)
+        self.dropout2 = nn.Dropout(p=0.15)
         self.lin3 = nn.Linear(sndHL, thdHL)
         self.bn3 = nn.BatchNorm1d(thdHL)
-        self.dropout3 = nn.Dropout(p=0.75)
-        self.lin4 = nn.Linear(thdHL, 128)
+        self.dropout3 = nn.Dropout(p=0.15)
+        self.lin4 = nn.Linear(thdHL, fthHL)
+        self.bn4 = nn.BatchNorm1d(fthHL)
+        self.dropout4 = nn.Dropout(0.15)
+        self.lin5 = nn.Linear(fthHL, fiftHL)
+        self.bn5 = nn.BatchNorm1d(fiftHL)
+        self.dropout5 = nn.Dropout(0.15)
+        self.lin6 = nn.Linear(fiftHL, sixtHL)
+        self.bn6 = nn.BatchNorm1d(sixtHL)
+        self.dropout6 = nn.Dropout(0.15)
+        self.lin7 = nn.Linear(sixtHL, sevtHL)
+        self.bn7 = nn.BatchNorm1d(sevtHL)
+        self.dropout7 = nn.Dropout(0.15)
+        self.lin8 = nn.Linear(sevtHL, 128)
 
 
     def forward(self, x):
@@ -181,18 +189,61 @@ class Net(nn.Module):
         output: x: torch.Tensor, the output of the model
         """
         
-        x = F.relu(self.bn1(self.lin1(x)))
+        x = F.celu(self.bn1(self.lin1(x)), alpha=1)
         x = self.dropout1(x)
-        x = F.relu(self.bn2(self.lin2(x)))
-        x = self.dropout2(x)
-        x = F.relu(self.bn3(self.lin3(x)))
+        x = F.celu(self.bn2(self.lin2(x)), alpha=1)
+        x = self.dropout2(x) 
+        x = F.celu(self.bn3(self.lin3(x)), alpha=1)
         x = self.dropout3(x)
-        x = self.lin4(x)
+        x = F.celu(self.bn4(self.lin4(x)), alpha=1)
+        x = self.dropout4(x)
+        x = F.celu(self.bn5(self.lin5(x)), alpha=1)
+        x = self.dropout5(x)
+        x = F.celu(self.bn6(self.lin6(x)), alpha=1)
+        x = self.dropout6(x)
+        x = F.celu(self.bn7(self.lin7(x)), alpha=1)
+        x = self.dropout7(x)
+        x = self.lin8(x)
         return x
         
     
 
-def train_model(train_loader, fstHL, sndHL, thdHL, learning_rate):
+def test_outputs(train_loader, model):
+    model.eval()
+    predictions = []
+    values = []
+    train_loader = torch.utils.data.DataLoader(train_loader.dataset, batch_size=1, shuffle=True)
+        # Iterate over the test data
+    with torch.no_grad(): # We don't need to compute gradients for testing
+        for [x_batch, y] in train_loader:
+            values.append(y)
+            x_batch= x_batch.to(device)
+            predicted1 = model(x_batch[:,:2048])
+            predicted2 = model(x_batch[:,2048:2048*2])
+            predicted3 = model(x_batch[:,2048*2:2048*3])
+            predicted1 = predicted1.cpu().numpy()
+            predicted2 = predicted2.cpu().numpy()
+            predicted3 = predicted3.cpu().numpy()
+
+            for j in range(len(predicted1)):
+
+                norm1 = np.linalg.norm(predicted1[j] - predicted2[j])
+                norm2 = np.linalg.norm(predicted1[j] - predicted3[j])
+                # Rounding the predictions to 0 or 1
+                if norm1 <= norm2:
+                    predictions.append(1)
+                else:
+                    predictions.append(0)
+
+        correct = 0
+        for k in range(len(predictions)):
+            if predictions[k] == values[k]:
+                correct +=1
+            
+        print(f"Score: {correct/len(predictions)}%")
+
+
+def train_model(train_loader, fstHL, sndHL, thdHL, fthHL, fiftHL, sixtHL, sevtHL, learning_rate):
     """
     The training procedure of the model; it accepts the training data, defines the model 
     and then trains it.
@@ -202,15 +253,14 @@ def train_model(train_loader, fstHL, sndHL, thdHL, learning_rate):
     output: model: torch.nn.Module, the trained model
     """
     # Define the model architecture
-    model = Net(fstHL, sndHL, thdHL)
+    model = Net(fstHL, sndHL, thdHL, fthHL, fiftHL, sixtHL, sevtHL)
 
     # Set the model to train mode and move it to the device
     model.train()
     model.to(device) 
 
-    
-   
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+    
    
     critization = F.triplet_margin_loss
     
@@ -385,17 +435,20 @@ if __name__ == '__main__':
 
     train_loader = create_loader_from_np(X, y, train = True, batch_size=64)
 
-    fstHL = 256
-    sndHL = 128
-    thdHL = 128
-    
+    fstHL = 1024
+    sndHL = 512
+    thdHL = 512
+    fthHL = 256
+    fiftHL =256
+    sixtHL = 128
+    sevtHL = 128
 
 
     best_value = float('inf')
     
     
-    best_model = train_model(train_loader, fstHL, sndHL, thdHL, 0.001)
-
+    best_model = train_model(train_loader, fstHL, sndHL, thdHL, fthHL, fiftHL, sixtHL, sevtHL, 0.001)
+    test_outputs(train_loader, best_model)
    
 
     test_loader = create_loader_from_np(X_test, train = False, batch_size=1, shuffle=False)
