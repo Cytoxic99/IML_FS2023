@@ -47,7 +47,7 @@ def generate_embeddings():
     loader = torch.utils.data.DataLoader(dataset, batch_size=64, shuffle=False, num_workers=4)
 
     # Load a pretrained Food101 model
-    model = resnet50(weights=ResNet50_Weights.IMAGENET1K_V1)
+    model = torch.hub.load('pytorch/vision:v0.10.0', 'inception_v3', pretrained=True)
     # Remove the last layer to access the embeddings
     model.eval()
     model = model.to(device)
@@ -162,22 +162,7 @@ class Net(nn.Module):
         self.lin2 = nn.Linear(fstHL, sndHL)
         self.bn2 = nn.BatchNorm1d(sndHL)
         self.dropout2 = nn.Dropout(p=0.15)
-        self.lin3 = nn.Linear(sndHL, thdHL)
-        self.bn3 = nn.BatchNorm1d(thdHL)
-        self.dropout3 = nn.Dropout(p=0.15)
-        self.lin4 = nn.Linear(thdHL, fthHL)
-        self.bn4 = nn.BatchNorm1d(fthHL)
-        self.dropout4 = nn.Dropout(0.15)
-        self.lin5 = nn.Linear(fthHL, fiftHL)
-        self.bn5 = nn.BatchNorm1d(fiftHL)
-        self.dropout5 = nn.Dropout(0.15)
-        self.lin6 = nn.Linear(fiftHL, sixtHL)
-        self.bn6 = nn.BatchNorm1d(sixtHL)
-        self.dropout6 = nn.Dropout(0.15)
-        self.lin7 = nn.Linear(sixtHL, sevtHL)
-        self.bn7 = nn.BatchNorm1d(sevtHL)
-        self.dropout7 = nn.Dropout(0.15)
-        self.lin8 = nn.Linear(sevtHL, 128)
+        self.lin3 = nn.Linear(sndHL, 128)
 
 
     def forward(self, x):
@@ -193,17 +178,8 @@ class Net(nn.Module):
         x = self.dropout1(x)
         x = F.celu(self.bn2(self.lin2(x)), alpha=1)
         x = self.dropout2(x) 
-        x = F.celu(self.bn3(self.lin3(x)), alpha=1)
-        x = self.dropout3(x)
-        x = F.celu(self.bn4(self.lin4(x)), alpha=1)
-        x = self.dropout4(x)
-        x = F.celu(self.bn5(self.lin5(x)), alpha=1)
-        x = self.dropout5(x)
-        x = F.celu(self.bn6(self.lin6(x)), alpha=1)
-        x = self.dropout6(x)
-        x = F.celu(self.bn7(self.lin7(x)), alpha=1)
-        x = self.dropout7(x)
-        x = self.lin8(x)
+        x = self.lin3(x)
+        return x
         return x
         
     
