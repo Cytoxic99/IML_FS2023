@@ -1,11 +1,6 @@
-def test1(opos, x):
-    res = opos+1
-    def test2(x, res):
-        res+=x
-        return res
+import numpy as np
 
-    return test2
+l = np.zeros((2, 3))
 
-print(test1(1, 1))
-
+print(l + np.array([1, 2]))
 

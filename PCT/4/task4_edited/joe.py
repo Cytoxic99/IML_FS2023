@@ -5,12 +5,16 @@ import pandas as pd
 import numpy as np
 import torch
 import torch.nn as nn
-from sklearn.pipeline import Pipeline
 from sklearn.model_selection import train_test_split
 from sklearn.base import BaseEstimator, TransformerMixin
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
+import os
+from sklearn.linear_model import LinearRegression
+from sklearn.pipeline import Pipeline
+from sklearn.compose import TransformedTargetRegressor
+from sklearn.preprocessing import StandardScaler
 
 
 def load_data():
@@ -88,61 +92,67 @@ def make_feature_extractor(x, y, batch_size=256, eval_size=1000, lr=0.001, num_w
             
     output: make_features: function, a function which can be used to extract features from the training and test data
     """
-    # Pretraining data loading
-    in_features = x.shape[-1]
-    x_tr, x_val, y_tr, y_val = train_test_split(x, y, test_size=eval_size, random_state=0, shuffle=True)
-    x_tr, x_val = torch.tensor(x_tr, dtype=torch.float), torch.tensor(x_val, dtype=torch.float)
-    y_tr, y_val = torch.tensor(y_tr, dtype=torch.float), torch.tensor(y_val, dtype=torch.float)
-    print('pretraining data loaded')
+    if(os.path.exists('model_full.pth') == False):
+        # Pretraining data loading
+        in_features = x.shape[-1]
+        x_tr, x_val, y_tr, y_val = train_test_split(x, y, test_size=eval_size, random_state=0, shuffle=True)
+        x_tr, x_val = torch.tensor(x_tr, dtype=torch.float), torch.tensor(x_val, dtype=torch.float)
+        y_tr, y_val = torch.tensor(y_tr, dtype=torch.float), torch.tensor(y_val, dtype=torch.float)
+        print('pretraining data loaded')
 
-    # TODO create data loaders
-    train_dataset = TensorDataset(x_tr, y_tr)
-    train_loader = DataLoader(dataset=train_dataset,
-                              batch_size=batch_size,
-                              shuffle=shuffle,
-                              pin_memory=True, num_workers=num_workers)
+        # TODO create data loaders
+        train_dataset = TensorDataset(x_tr, y_tr)
+        train_loader = DataLoader(dataset=train_dataset,
+                                  batch_size=batch_size,
+                                  shuffle=shuffle,
+                                  pin_memory=True, num_workers=num_workers)
 
-    val_dataset = TensorDataset(x_val, y_val)
-    val_loader = DataLoader(dataset=val_dataset,
-                            batch_size=batch_size,
-                            shuffle=shuffle,
-                            pin_memory=True, num_workers=num_workers)
+        val_dataset = TensorDataset(x_val, y_val)
+        val_loader = DataLoader(dataset=val_dataset,
+                                batch_size=batch_size,
+                                shuffle=shuffle,
+                                pin_memory=True, num_workers=num_workers)
 
-    print('pretraining loaders created')
+        print('pretraining loaders created')
 
-    # model declaration
-    model = Net()
-    model.train()
-    optimizer = optim.Adam(model.parameters(), lr=lr)
-    loss_func = F.huber_loss
+        # model declaration
+        model = Net()
+        model.train()
+        optimizer = optim.Adam(model.parameters(), lr=lr)
+        loss_func = F.huber_loss
 
-    # TODO: Implement the training loop. The model should be trained on the pretraining data. Use validation set to monitor the loss.
-    for epoch in range(n_epoch):
-        # training
-        train_loss = 0.0
-        for [x, y] in train_loader:
-            optimizer.zero_grad()
-            pred = model.forward(x).squeeze(1)
-            loss = loss_func(pred, y)
-            loss.backward()
-            optimizer.step()
-            train_loss += loss.item()
-        train_loss /= len(train_loader)
+        # TODO: Implement the training loop. The model should be trained on the pretraining data. Use validation set to monitor the loss.
+        for epoch in range(n_epoch):
+            # training
+            train_loss = 0.0
+            for [x, y] in train_loader:
+                optimizer.zero_grad()
+                pred = model.forward(x).squeeze(1)
+                loss = loss_func(pred, y)
+                loss.backward()
+                optimizer.step()
+                train_loss += loss.item()
+            train_loss /= len(train_loader)
 
-        # validation
-        model.eval()
-        val_loss = 0.0
-        with torch.no_grad():
-            for [inputs, targets] in val_loader:
-                outputs = model(inputs).squeeze(1)
-                loss = loss_func(outputs, targets)
-                val_loss += loss.item()
-        val_loss /= len(val_loader)
+            # validation
+            model.eval()
+            val_loss = 0.0
+            with torch.no_grad():
+                for [inputs, targets] in val_loader:
+                    outputs = model(inputs).squeeze(1)
+                    loss = loss_func(outputs, targets)
+                    val_loss += loss.item()
+            val_loss /= len(val_loader)
 
-        print(f"Epoch: {epoch + 1}/{n_epoch}, training loss: {train_loss:.4f}, validation loss: {val_loss:.4f}")
+            print(f"Epoch: {epoch + 1}/{n_epoch}, training loss: {train_loss:.4f}, validation loss: {val_loss:.4f}")
+
+        torch.save(model, 'model_full.pth')
+        print('pretraining model saved')
+    else:
+        print('model is already trained and saved')
 
     # evaluation
-    def make_features(x, pretrained_model):
+    def make_features(x):
 
         """
         This function extracts features from the training and test data, used in the actual pipeline
@@ -154,27 +164,30 @@ def make_feature_extractor(x, y, batch_size=256, eval_size=1000, lr=0.001, num_w
         further in the pipeline
         """
 
-        model.eval()
+        pretrained_model = torch.load('model_full.pth')
+
         # TODO: Implement the feature extraction, a part of a pretrained model used later in the pipeline.
 
         # Remove the last layer
         pretrained_model = nn.Sequential(*list(pretrained_model.children())[:-1])
+        pretrained_model.eval()
 
         # Freeze the parameters of the remaining layers
         for param in pretrained_model.parameters():
             param.requires_grad = False
 
         # Iterate through your molecule dataset
-        molecule_dataset = torch.tensor(x, dtype=torch.float)
-        features =
-        for molecule in molecule_dataset:
+        molecules = torch.tensor(x, dtype=torch.float)
+        #features = np.zeros((len(x), 64))
+        features = []
+        for molecule in molecules:
             # Pass each molecule through the modified pretrained model
-            features = pretrained_model(molecule)
-            # Use the extracted features for further analysis or downstream tasks
+            features.append(pretrained_model(molecule).tolist())
 
+        #features = np.array(features)
         return features
 
-    return make_features(x, model)
+    return make_features(x)
 
 
 def make_pretraining_class(feature_extractors):
@@ -216,7 +229,7 @@ def get_regression_model():
     """
     # TODO: Implement the regression model. It should be able to be trained on the features extracted
     # by the feature extractor.
-    model = None
+    model = LinearRegression()
     return model
 
 
@@ -234,22 +247,37 @@ if __name__ == '__main__':
     num_arbeiter = 8
     epochen = 2
     mischen = False
-    feature_extractor = make_feature_extractor(x_pretrain, y_pretrain, batsch_size,
-                                               n_eval, learning_rate, num_arbeiter, mischen, epochen)
+    pretrained_features = make_feature_extractor(x_pretrain, y_pretrain, batsch_size,
+                                                 n_eval, learning_rate, num_arbeiter, mischen, epochen)
+    print(f'features extracted successfully with shape: {np.array(pretrained_features).shape}')
+
+    PretrainedFeatureClass = make_pretraining_class({"pretrain": pretrained_features})
+    print('feature class generated')
+
+
+
     """
-    PretrainedFeatureClass = make_pretraining_class({"pretrain": feature_extractor})
-    
     # regression model
     regression_model = get_regression_model()
-
-    y_pred = np.zeros(x_test.shape[0])
+    print('regression model generated')
 
     # TODO: Implement the pipeline. It should contain feature extraction and regression. You can optionally
     # use other sklearn tools, such as StandardScaler, FunctionTransformer, etc.
-    pipeline = Pipeline('pretrained', PretrainedFeatureClass, 'regressor', regression_model)
+
+    pipeline = Pipeline([
+        ("pretrained_features", PretrainedFeatureClass(feature_extractor="pretrain", mode="train")),
+        ("scaler", StandardScaler()),  # Optional: Standardize the features
+        ("regression", TransformedTargetRegressor(regressor=regression_model, transformer=None))
+    ])
+
+    pipeline.fit(x_train, y_train)
+    #y_pred = np.zeros(x_test.shape[0])
+    y_pred = pipeline.predict(x_test)
+
 
     assert y_pred.shape == (x_test.shape[0],)
     y_pred = pd.DataFrame({"y": y_pred}, index=x_test.index)
     y_pred.to_csv("results.csv", index_label="Id")
     print("Predictions saved, all done!")
     """
+
