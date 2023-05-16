@@ -92,7 +92,7 @@ def make_feature_extractor(x, y, batch_size=256, eval_size=1000, lr=0.001, num_w
             
     output: make_features: function, a function which can be used to extract features from the training and test data
     """
-    if(os.path.exists('model_full.pth') == False):
+    if os.path.exists('model_full.pth') == False:
         # Pretraining data loading
         in_features = x.shape[-1]
         x_tr, x_val, y_tr, y_val = train_test_split(x, y, test_size=eval_size, random_state=0, shuffle=True)
@@ -125,6 +125,7 @@ def make_feature_extractor(x, y, batch_size=256, eval_size=1000, lr=0.001, num_w
         for epoch in range(n_epoch):
             # training
             train_loss = 0.0
+            progress = 1
             for [x, y] in train_loader:
                 optimizer.zero_grad()
                 pred = model.forward(x).squeeze(1)
@@ -132,6 +133,8 @@ def make_feature_extractor(x, y, batch_size=256, eval_size=1000, lr=0.001, num_w
                 loss.backward()
                 optimizer.step()
                 train_loss += loss.item()
+                # print(f'training epoch {epoch+1}: {progress/len(train_loader)*100} %')
+                progress += 1
             train_loss /= len(train_loader)
 
             # validation
@@ -147,11 +150,10 @@ def make_feature_extractor(x, y, batch_size=256, eval_size=1000, lr=0.001, num_w
             print(f"Epoch: {epoch + 1}/{n_epoch}, training loss: {train_loss:.4f}, validation loss: {val_loss:.4f}")
 
         torch.save(model, 'model_full.pth')
-        print('pretraining model saved')
+        print('pretraining model generated and saved')
     else:
         print('model is already trained and saved')
 
-    # evaluation
     def make_features(x):
 
         """
@@ -178,16 +180,17 @@ def make_feature_extractor(x, y, batch_size=256, eval_size=1000, lr=0.001, num_w
 
         # Iterate through your molecule dataset
         molecules = torch.tensor(x, dtype=torch.float)
-        #features = np.zeros((len(x), 64))
+        # features = np.zeros((len(x), 64))
         features = []
         for molecule in molecules:
             # Pass each molecule through the modified pretrained model
             features.append(pretrained_model(molecule).tolist())
 
-        #features = np.array(features)
+        features = np.array(features)
+        print(f'features extracted successfully with shape: {features.shape}')
         return features
 
-    return make_features(x)
+    return make_features
 
 
 def make_pretraining_class(feature_extractors):
@@ -237,26 +240,27 @@ def get_regression_model():
 if __name__ == '__main__':
     # Load data
     x_pretrain, y_pretrain, x_train, y_train, x_test = load_data()
-    print("Data loaded!")
+    print("data loaded")
 
-    # Utilize pretraining data by creating feature extractor which extracts lumo energy 
+    # generate pretrained model and save it
+    # Utilize pretraining data by creating a function called "feature_extractor" which extracts lumo energy
     # features from available initial features
-    learning_rate = 0.001
+    learning_rate = 0.0009
     n_eval = 1000
     batsch_size = 256
     num_arbeiter = 8
-    epochen = 2
+    epochen = 12
     mischen = False
-    pretrained_features = make_feature_extractor(x_pretrain, y_pretrain, batsch_size,
+    feature_extractor = make_feature_extractor(x_pretrain, y_pretrain, batsch_size,
                                                  n_eval, learning_rate, num_arbeiter, mischen, epochen)
-    print(f'features extracted successfully with shape: {np.array(pretrained_features).shape}')
+    print('feature-extractor-function generated')
 
-    PretrainedFeatureClass = make_pretraining_class({"pretrain": pretrained_features})
+
+    # create pretrained feature class
+    PretrainedFeatureClass = make_pretraining_class({"pretrain": feature_extractor})
     print('feature class generated')
 
 
-
-    """
     # regression model
     regression_model = get_regression_model()
     print('regression model generated')
@@ -272,12 +276,13 @@ if __name__ == '__main__':
 
     pipeline.fit(x_train, y_train)
     #y_pred = np.zeros(x_test.shape[0])
-    y_pred = pipeline.predict(x_test)
+    y_pred = pipeline.predict(x_test.values)
 
 
     assert y_pred.shape == (x_test.shape[0],)
     y_pred = pd.DataFrame({"y": y_pred}, index=x_test.index)
     y_pred.to_csv("results.csv", index_label="Id")
     print("Predictions saved, all done!")
-    """
+
+
 
