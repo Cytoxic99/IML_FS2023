@@ -3,19 +3,22 @@
 # First, we import necessary libraries:
 import pandas as pd
 import numpy as np
+
 import torch
 import torch.nn as nn
-from sklearn.model_selection import train_test_split
-from sklearn.base import BaseEstimator, TransformerMixin
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
+
 import os
-from sklearn.linear_model import LinearRegression
+
 from sklearn.pipeline import Pipeline
 from sklearn.compose import TransformedTargetRegressor
 from sklearn.preprocessing import StandardScaler
-
+from sklearn.model_selection import train_test_split
+from sklearn.base import BaseEstimator, TransformerMixin
+from sklearn.ensemble import GradientBoostingRegressor
+#from sklearn.linear_model import LinearRegression
 
 def load_data():
     """
@@ -232,7 +235,8 @@ def get_regression_model():
     """
     # TODO: Implement the regression model. It should be able to be trained on the features extracted
     # by the feature extractor.
-    model = LinearRegression()
+    model = GradientBoostingRegressor()
+
     return model
 
 
