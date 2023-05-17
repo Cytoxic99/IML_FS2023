@@ -214,7 +214,7 @@ if __name__ == '__main__':
     num_arbeiter = 8
     epochen = 2
     mischen = True
-    feature_extractor =  make_feature_extractor(x_pretrain, y_pretrain, batsch_size,
+    feature_extractor = make_feature_extractor(x_pretrain, y_pretrain, batsch_size,
                                                 n_eval, learning_rate, num_arbeiter, mischen, epochen)
     PretrainedFeatureClass = make_pretraining_class({"pretrain": feature_extractor})
     
