@@ -1,6 +1,11 @@
-# This serves as a template which will guide you through the implementation of this task.  It is advised
-# to first read the whole template and get a sense of the overall structure of the code before trying to fill in any of the TODO gaps
-# First, we import necessary libraries:
+# this code is similar to joe0, the difference is, that instead of a model from the scikit-learn package,
+# the self-made model for pretraining is reused.
+
+# ATTENTION: this code is not working, because the extracted features can not be fed into the same network used
+# for pretraining. The first hidden layer of the NN has 128 nodes, but the number of extracted features per
+# molecules is 64
+
+
 import pandas as pd
 import numpy as np
 
