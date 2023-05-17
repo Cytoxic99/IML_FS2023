@@ -230,7 +230,7 @@ def training(x, y, batch_size=256, eval_size=100, lr=0.001, num_workers=12, shuf
     print('raining model generated and saved')
 
 
-def test(x):
+def tescht(x):
     x_test = torch.tensor(x, dtype=torch.float)
     model = torch.load('train_model_full.pth')
     model.eval()
@@ -270,14 +270,14 @@ if __name__ == '__main__':
     n_eval = 10
     batsch_size = 32
     num_arbeiter = 8
-    epochen = 45
+    epochen = 1
     mischen = True
     training(x_train, y_train, batsch_size,
                       n_eval, learning_rate, num_arbeiter, mischen, epochen)
 
     # test model and generate results file
     x_test_val = x_test.values
-    y_pred = test(x_test_val)
+    y_pred = tescht(x_test_val)
     #y_pred = test(x_train)
 
     #assert y_pred.shape == (x_test.shape[0],)
