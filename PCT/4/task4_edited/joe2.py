@@ -18,6 +18,7 @@ import os
 from sklearn.model_selection import train_test_split
 
 
+
 def load_data():
     """
     This function loads the data from the csv files and returns it as numpy arrays.
@@ -122,7 +123,7 @@ def pretraining_model(x, y, batch_size=256, eval_size=1000, lr=0.001, num_worker
         model = Net(input_shape=1000)
         model.train()
         optimizer = optim.Adam(model.parameters(), lr=lr)
-        loss_func = F.huber_loss
+        loss_func = nn.MSELoss()
 
         # TODO: Implement the training loop. The model should be trained on the pretraining data. Use validation set to monitor the loss.
         for epoch in range(n_epoch):
@@ -141,7 +142,7 @@ def pretraining_model(x, y, batch_size=256, eval_size=1000, lr=0.001, num_worker
                 # print(f'training epoch {epoch+1}: {progress/len(train_loader)*100} %')
                 if progress % 30 == 0:
                     print(f"Epoch {epoch + 1} Pre-Training, Progress: {(progress / len(train_loader)) * 100}%")
-                    pass
+                    
                 progress += 1
             train_loss /= len(train_loader)
 
@@ -270,7 +271,7 @@ if __name__ == '__main__':
     n_eval = 10
     batsch_size = 32
     num_arbeiter = 8
-    epochen = 1
+    epochen = 140
     mischen = True
     training(x_train, y_train, batsch_size,
                       n_eval, learning_rate, num_arbeiter, mischen, epochen)
